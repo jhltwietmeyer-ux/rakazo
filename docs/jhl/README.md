@@ -8,6 +8,9 @@ des Originals konfliktfrei bleibt.
 - `01-pruefung-und-anpassungsplan.md` — Prüfung der drei Use Cases gegen Rakazo, Anpassungsplan in drei
   Schichten, Schritte R0 bis R6.
 
+Entscheidung von Johann: Telegram und andere Messaging-Anbindungen werden nicht genutzt; die Rakazo-Apps
+(Web, Desktop, iPhone) sind die Oberfläche. Nicht wieder vorschlagen.
+
 Regeln für Sessions: Original-Dateien nur ändern, wenn der Plan es als Kernänderung vorsieht, und dann als
 Pull Request ans Original. Keine Secrets, keine persönlichen Daten in diesem Repo (es ist privat, aber die
 Regel gilt trotzdem). Sprache in Doku und Bot-Anweisungen Deutsch, Code Englisch wie im Original.

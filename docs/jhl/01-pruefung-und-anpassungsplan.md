@@ -10,11 +10,12 @@ Rakazo deckt die drei Use Cases (Buchhaltung, Entwicklerteam, E-Mail und Kalende
 Eigenbau `jhl-Bots`: Bots legen Bots an, schreiben sich asynchron Nachrichten, planen eigene Routinen,
 fragen Zugangsdaten über geschützte Karten ab, haben eigenes Gedächtnis, eigene Skills, ein Ticket-Board,
 eine Sandbox mit Shell, Dateien und Browser, und sie sprechen jedes Modell über den Pi-Harness. Web-App,
-Desktop-App und iPhone-App gibt es fertig. Vier Lücken bleiben: der Chef kann beim Anlegen kein Modell
-setzen (kleine Kernänderung), Telegram ist ein einzelner Gateway-Bot statt ein Bot je Agent (mittlere
-Kernänderung, optional), harte Tagesbudgets je Bot fehlen (optional), und Fotos aus Telegram kommen nur als
-Link an (Belege besser über die App schicken). Bank, PayPal und Nextcloud bringen wir als eigenen
-MCP-Server mit, ohne den Kern anzufassen.
+Desktop-App und iPhone-App gibt es fertig; sie sind die Oberfläche des Netzes. Zwei Lücken bleiben: der Chef
+kann beim Anlegen kein Modell setzen (kleine Kernänderung), und harte Tagesbudgets je Bot fehlen (optional).
+Bank, PayPal und Nextcloud bringen wir als eigenen MCP-Server mit, ohne den Kern anzufassen.
+
+**Entscheidung (Johann, 16.10.2026): Telegram wird nicht genutzt.** Die Rakazo-Apps sind die einzige
+Oberfläche. Messaging-Anbindungen bleiben abgeschaltet und kommen in keinem Schritt vor.
 
 ## 2. Was Rakazo mitbringt (geprüft im Code)
 
@@ -33,8 +34,7 @@ MCP-Server mit, ohne den Kern anzufassen.
 | Tickets | Eingebautes Board: `ticket_create` / `ticket_get` / `ticket_update` / `ticket_comment` / `board_tickets`, Zuweisung an Bots | `model Board`, `model Ticket` |
 | Werkstatt (Code ausführen) | Computer je Team oder je Bot: `shell`, `read_file` / `write_file` / `list_files`, `browser_navigate` / `browser_snapshot` / `browser_act`, `computer_observe` / `computer_act`, dazu `cloud_agent_launch` (derzeit Cursor Cloud Agents) | `docs/computer-runtime.md`, builtin-tools.ts |
 | App-Anbindungen | Composio (z. B. GMAIL_CREATE_EMAIL_DRAFT, GOOGLECALENDAR, GOOGLESHEETS, OUTLOOK, GITHUB, LINEAR, ASANA) oder Pipedream; eigene MCP-Server je Space, vom Bot selbst per `add_mcp_server` anlegbar, mit OAuth-Sitzungen; OpenAPI-Werkzeugquellen | `composio-connector.ts`, `model McpServer`, `model BotMcpServer` |
-| Telegram | Ein Gateway-Bot (`TELEGRAM_BOT_TOKEN`, Webhook, braucht öffentliches HTTPS). Jede Absender-Adresse ist genau einem Bot zugeordnet; Wechsel per Link-Code aus der App. Gruppen verteilen an alle Mitglieds-Bots, Ansprache per @Name. Medien kommen als Link, nicht als Anhang | `apps/api/src/messaging-inbound.ts`, `messaging-platforms.ts`, `model MessagingIdentity` |
-| Oberflächen | Web (Vite, Deutsch vorhanden), Desktop (Electron, „Existing instance"), iPhone (App Store, „Use a custom server"), Android (selbst bauen) | `apps/`, `docs/self-host.md`, `docs/mobile-release.md` |
+| Oberflächen | Web (Vite, Deutsch vorhanden), Desktop (Electron, „Existing instance"), iPhone (App Store, „Use a custom server"), Android (selbst bauen). Anhänge wie Fotos und PDFs werden Artefakte des Bots | `apps/`, `docs/self-host.md`, `docs/mobile-release.md` |
 | Kosten | `UsageRecord` je Lauf, Modell und Bot; keine harten Tagesbudgets je Bot gefunden | `model UsageRecord` |
 
 ## 3. Die drei Use Cases gegen Rakazo
@@ -46,8 +46,7 @@ MCP-Server mit, ohne den Kern anzufassen.
   Bot-Einstellungen der App gesetzt. → Kernänderung K1.
 - Google Sheet anlegen und pflegen: ja, über Composio (Google Sheets, Hobby-Tarif kostenlos) oder über die
   Google-API mit `request_secret`.
-- Belege per Foto: in der App ja (Anhänge werden Artefakte). Über Telegram nur als Link, ohne Übernahme der
-  Datei. → Belege über die App schicken oder Kernänderung K4.
+- Belege per Foto: ja, Anhänge in der App werden Artefakte des Bots.
 - Konten und PayPal lesend: kein fertiger Konnektor. Zwei Wege: `secret_request` ruft eine HTTPS-API mit
   injiziertem Schlüssel direkt auf (reicht für einfache Token-APIs), oder unser MCP-Server (Schicht 2) kapselt
   Enable Banking (PSD2, „Restricted Production" für eigene Konten laut Anbieter, vorher prüfen) und PayPal
@@ -92,7 +91,7 @@ MCP-Server mit, ohne den Kern anzufassen.
   Bots (Name, Titel, Zuständigkeit, wer wem schreibt, Modellempfehlung nach Aufgabe und Kosten), Pflicht,
   nach Modell und Name zu fragen, Hinweis auf K1-Umweg (Modell in den Einstellungen setzen, bis K1 da ist).
 - Freigaberegeln: schreibende Werkzeuge zunächst „Allow once", vertrauenswürdige Routinen später „Always allow".
-- Telegram-Gateway-Bot an den Chef gebunden; Gruppen optional.
+- Messaging-Anbindungen (Telegram, Slack, WhatsApp, iMessage, Lark) bleiben unkonfiguriert.
 
 ### Schicht 2: Erweiterungen außerhalb des Kerns
 
@@ -107,26 +106,20 @@ MCP-Server mit, ohne den Kern anzufassen.
 - **K1 Modell beim Anlegen** (klein): `spawn_bot` und `update_bot` um `model_provider`, `model_id`,
   `thinking_level` erweitern; Validierung gegen den Modellkatalog des Space. Betrifft
   `packages/adapters/src/builtin-tools.ts`, `pi-runtime.ts`, `child-bots.ts`, Contracts, Tests.
-- **K2 Ein Telegram-Bot je Agent** (mittel, optional): mehrere Telegram-Tokens, jeder fest an einen Bot
-  gebunden; Identität dann je (Provider, Adresse, Bot). Betrifft `messaging-platforms.ts`,
-  `messaging-inbound.ts`, `messaging-delivery.ts`, Datenmodell `MessagingIdentity`. Erst entscheiden, wenn
-  die App als Hauptoberfläche ausprobiert ist.
-- **K3 Tagesbudget je Bot** (klein bis mittel, optional): harter Stopp je Bot und Tag auf Basis von
+- **K2 Tagesbudget je Bot** (klein bis mittel, optional): harter Stopp je Bot und Tag auf Basis von
   `UsageRecord`, mit Hinweis im Chat.
-- **K4 Telegram-Anhänge** (klein, optional): eingehende Fotos und Dateien aus Telegram als Artefakt
-  übernehmen statt als Link.
 
 ## 5. Schritte
 
 | Schritt | Inhalt | Abnahme |
 |---|---|---|
 | R0 | Fork pflegen: Branch `jhl`, `docs/jhl/`, Routine zum Nachziehen des Originals | `git merge upstream/main` läuft konfliktfrei |
-| R1 | Server (16 GB), Domain mit HTTPS, Installer, `.env`, erster Nutzer, Signups zu, Modellschlüssel, Composio, Telegram-Gateway | Anmeldung in Web und iPhone-App, ein Bot antwortet |
+| R1 | Server (16 GB), Domain mit HTTPS, Installer, `.env`, erster Nutzer, Signups zu, Modellschlüssel, Composio | Anmeldung in Web und iPhone-App, ein Bot antwortet |
 | R2 | Chef „Seneca" mit deutschen Anweisungen und Bot-Leitfaden, Freigaberegeln | Chef legt auf Zuruf einen Test-Bot an, fragt nach Name und Modell, Bot erscheint in der App |
 | R3 | Buchhaltung: Sheets über Composio, Belege, Routinen, MCP-Server mit Bank/PayPal/Nextcloud | Routine pflegt ein Sheet; Beleg landet in Nextcloud; Umsätze lesbar |
 | R4 | E-Mail und Kalender: Gmail/Outlook/Kalender über Composio, CalDAV im MCP-Server, Stil-Skill | Entwurf im Entwurfsordner im Stil von Johann; Termin gelesen und angelegt |
 | R5 | Entwicklerteam: fünf Bots, Private Computer, GitHub-Token, Board oder Linear, Review-Schleife | Aufgabe aus Asana wird als PR mit Review abgeschlossen, Chef meldet Fertigstellung |
-| R6 | Kernänderungen als PRs: K1 zuerst, K2 bis K4 nach Bedarf | PR im Original angenommen oder als gepflegter Patch auf `jhl` |
+| R6 | Kernänderungen als PRs: K1 zuerst, K2 nach Bedarf | PR im Original angenommen oder als gepflegter Patch auf `jhl` |
 
 ## 6. Server
 
@@ -134,7 +127,7 @@ Compose-Grenzen in `infra/compose/docker-compose.prod.yml`: Postgres 2 GB, API 1
 0,5 GB, Updater 1 GB, Caddy 0,25 GB, dazu je Computer 2 GB und 2 vCPU (schläft nach 10 Minuten). Für R1 bis
 R4 reicht ein Server mit 8 GB knapp; mit parallelen Entwickler-Computern (R5) sind 16 GB nötig: Hetzner CX43
 (8 vCPU, 16 GB, 15,99 € netto) oder CAX31 (ARM, Images sind multi-arch). Dazu 0,50 € für IPv4 und optional
-Backups (20 %). Öffentliche Domain mit HTTPS ist Pflicht (Telegram-Webhook, iPhone-App).
+Backups (20 %). Öffentliche Domain mit HTTPS ist Pflicht (iPhone-App und Desktop-App verlangen HTTPS).
 
 ## 7. Was aus `jhl-Bots` weiterlebt
 
