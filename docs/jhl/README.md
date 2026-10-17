@@ -7,6 +7,8 @@ des Originals konfliktfrei bleibt.
 
 - `01-pruefung-und-anpassungsplan.md` — Prüfung der drei Use Cases gegen Rakazo, Anpassungsplan in drei
   Schichten, Schritte R0 bis R6.
+- `bots/seneca.md` — Chef-Bot Seneca (R2): Anweisungen zum Einfügen in die App, Bot-Leitfaden als Skill,
+  Einrichtungs-Checkliste. Weitere Bots kommen als `bots/<name>.md` dazu.
 
 Entscheidung von Johann: Telegram und andere Messaging-Anbindungen werden nicht genutzt; die Rakazo-Apps
 (Web, Desktop, iPhone) sind die Oberfläche. Nicht wieder vorschlagen.
