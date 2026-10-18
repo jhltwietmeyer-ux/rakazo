@@ -5770,6 +5770,9 @@ export const Composer = memo(function Composer({
     void session.listen({
       mode: "dictate",
       transcribe: dictationTranscribe,
+      // A connected transcriber beats the browser's recognizer and keeps audio off Google's
+      // and Microsoft's speech services.
+      preferServer: dictationTranscribe === true,
       onFinal: (text) => {
         if (dictationAnchor.current !== anchor) return;
         dictationAnchor.current = null;

@@ -120,6 +120,23 @@ describe("OpenAIVoiceProvider", () => {
     expect(voices.some((voice) => voice.id === "alloy")).toBe(true);
   });
 
+  it("transcribes with the language hint", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ text: "Guten Morgen" })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      new OpenAIVoiceProvider().transcribe(
+        { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk", language: "de" },
+        ctx,
+      ),
+    ).resolves.toEqual({ text: "Guten Morgen" });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/audio/transcriptions");
+    expect((init as RequestInit).body).toBeInstanceOf(FormData);
+    expect(((init as RequestInit).body as FormData).get("language")).toBe("de");
+  });
+
   it("posts speech to /audio/speech", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

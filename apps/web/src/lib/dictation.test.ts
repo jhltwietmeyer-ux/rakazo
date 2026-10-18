@@ -44,6 +44,26 @@ function stubRecorderFallback(fetchMock: ReturnType<typeof vi.fn>) {
   );
 }
 
+describe("Dictation with a server transcriber", () => {
+  it("records for the server even where the browser could recognize speech", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ text: "aus dem Server" }), { status: 200 }),
+    );
+    stubRecorderFallback(fetchMock);
+    const recognition = vi.fn();
+    vi.stubGlobal("window", { webkitSpeechRecognition: recognition });
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "dictate", transcribe: true, preferServer: true, onFinal });
+    expect(recognition).not.toHaveBeenCalled();
+    expect(dictation.state.status).toBe("listening");
+    dictation.submitHold();
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("aus dem Server"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/voice/transcribe", expect.anything());
+  });
+});
+
 describe("Dictation recorder fallback", () => {
   it("stops tracks if hold-to-talk is cancelled while the mic prompt is open", async () => {
     const track = { stop: vi.fn() };

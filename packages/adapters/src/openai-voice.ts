@@ -86,6 +86,8 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   ): Promise<{ text: string }> {
     const form = new FormData();
     form.set("model", STT_MODEL);
+    // A language hint keeps short German dictation from being heard as another language.
+    if (request.language) form.set("language", request.language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),

@@ -290,10 +290,10 @@ import {
   listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
+  loadVoiceStatus,
   persistVoiceCredential,
   prepareVoice,
   toVoiceCredential,
-  toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
 } from "./voice.js";
@@ -6042,7 +6042,7 @@ export function createRouter(deps: RouterDeps) {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
       status: authed.voice.status.handler(async ({ context }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
-        return toVoiceStatus(cred);
+        return loadVoiceStatus(deps, context.actor, cred);
       }),
       credentials: authed.voice.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userVoiceCredential.findMany({
@@ -6106,7 +6106,7 @@ export function createRouter(deps: RouterDeps) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
-        return toVoiceStatus(cred);
+        return loadVoiceStatus(deps, context.actor, cred);
       }),
       setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
         updateVoiceSpeechModel(deps, context.actor, input),

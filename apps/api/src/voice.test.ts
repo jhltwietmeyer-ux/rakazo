@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   disconnectVoiceCredential,
   fishSpeechModelValue,
+  loadTranscriber,
+  loadVoiceStatus,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
@@ -479,5 +481,112 @@ describe("synthesizeVoice", () => {
     await synthesizeVoice(deps, actor, { text: "Hello" });
 
     expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ model: undefined });
+  });
+});
+
+describe("loadTranscriber", () => {
+  const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
+
+  function depsWith(options: {
+    defaultVoice?: { provider: string; voiceId: string } | null;
+    voiceProviders?: string[];
+    modelProviders?: Record<string, string>;
+  }): VoiceDeps {
+    const voiceRow = (provider: string) => ({
+      credential: {
+        id: `voice-${provider}`,
+        userId: "user-1",
+        provider,
+        secretId: `secret-voice-${provider}`,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+      isDefault: provider === options.defaultVoice?.provider,
+      voiceId: options.defaultVoice?.voiceId ?? "",
+      speechModel: null,
+    });
+    const prisma = {
+      spaceVoicePreference: {
+        findFirst: vi.fn(async (query: { where: { credential?: { provider: string } } }) => {
+          const provider = query.where.credential?.provider ?? options.defaultVoice?.provider;
+          if (!provider) return null;
+          if (!query.where.credential) return voiceRow(provider);
+          return (options.voiceProviders ?? []).includes(provider) ? voiceRow(provider) : null;
+        }),
+      },
+      userVoiceCredential: { findFirst: vi.fn(async () => null) },
+      spaceModelPreference: { findMany: vi.fn(async () => []) },
+      userModelCredential: {
+        findMany: vi.fn(async (query: { where: { provider: string } }) =>
+          options.modelProviders?.[query.where.provider]
+            ? [
+                {
+                  id: `model-${query.where.provider}`,
+                  userId: "user-1",
+                  provider: query.where.provider,
+                  label: "",
+                  secretId: `secret-model-${query.where.provider}`,
+                  supportsImages: false,
+                  createdAt: new Date(0),
+                  updatedAt: new Date(0),
+                },
+              ]
+            : [],
+        ),
+      },
+      secret: {
+        findFirst: vi.fn(async (query: { where: { id: string } }) => ({
+          id: query.where.id,
+          ciphertext: query.where.id,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const secrets = {
+      load: vi.fn(async (ciphertext: string) =>
+        ciphertext.startsWith("secret-model-")
+          ? (options.modelProviders?.[ciphertext.slice("secret-model-".length)] ?? "")
+          : `key-${ciphertext}`,
+      ),
+    };
+    return { prisma, secrets } as unknown as VoiceDeps;
+  }
+
+  it("uses the selected voice provider when it can transcribe", async () => {
+    const deps = depsWith({ defaultVoice: { provider: "elevenlabs", voiceId: "v" } });
+    await expect(loadTranscriber(deps, actor)).resolves.toEqual({
+      provider: "elevenlabs",
+      apiKey: "key-secret-voice-elevenlabs",
+    });
+  });
+
+  it("falls back to another voice key that can transcribe", async () => {
+    const deps = depsWith({
+      defaultVoice: { provider: "cartesia", voiceId: "katie" },
+      voiceProviders: ["cartesia", "fish-audio"],
+    });
+    await expect(loadTranscriber(deps, actor)).resolves.toEqual({
+      provider: "fish-audio",
+      apiKey: "key-secret-voice-fish-audio",
+    });
+  });
+
+  it("reuses an OpenAI model connection when no voice key can transcribe", async () => {
+    const deps = depsWith({ modelProviders: { openai: "sk-model" } });
+    await expect(loadTranscriber(deps, actor)).resolves.toEqual({
+      provider: "openai",
+      apiKey: "sk-model",
+    });
+    await expect(loadVoiceStatus(deps, actor, null)).resolves.toMatchObject({
+      configured: false,
+      transcribe: true,
+    });
+  });
+
+  it("has nothing to offer with only a Claude connection", async () => {
+    const deps = depsWith({ modelProviders: { anthropic: "sk-ant" } });
+    await expect(loadTranscriber(deps, actor)).resolves.toBeNull();
+    await expect(loadVoiceStatus(deps, actor, null)).resolves.toMatchObject({
+      transcribe: false,
+    });
   });
 });

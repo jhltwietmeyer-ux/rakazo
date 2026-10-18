@@ -268,6 +268,8 @@ export class Dictation {
   async listen(opts: {
     mode: DictationMode;
     transcribe?: boolean;
+    /** Record for the server's transcriber even where the browser could recognize speech. */
+    preferServer?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
@@ -279,7 +281,7 @@ export class Dictation {
     const transcribe = Boolean(opts.transcribe);
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (prefersServerDictation() && opts.transcribe !== false) {
+    if ((opts.preferServer || prefersServerDictation()) && opts.transcribe !== false) {
       await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }

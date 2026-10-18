@@ -8,6 +8,7 @@ import {
   MAX_SPEAK_CHARS,
   MAX_TRANSCRIBE_BYTES,
   NoVoiceConfigured,
+  parseModelSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
@@ -15,6 +16,7 @@ import { toUtterances } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
+  findModelCredential,
   findVoiceCredential,
   IsolationError,
   newestVoiceCredentialOrder,
@@ -91,6 +93,45 @@ export function fishSpeechModelValue(speechModel: string): string | null {
     throw new ORPCError("BAD_REQUEST", { message: "That speech model id is not valid." });
   }
   return trimmed;
+}
+
+const OPENAI_PROVIDER = "openai";
+
+/**
+ * Who turns speech into text: the selected voice provider when it can, else any other
+ * connected voice provider that can, else an OpenAI model connection's API key. A Claude
+ * connection cannot, since Claude takes no audio.
+ */
+export async function loadTranscriber(deps: VoiceDeps, actor: Actor) {
+  const selected = await loadDefaultVoiceCredential(deps, actor);
+  if (selected && voiceCatalogEntry(selected.cred.provider)?.transcribe) {
+    return { provider: selected.cred.provider, apiKey: selected.apiKey };
+  }
+  for (const entry of listVoiceCatalog()) {
+    if (!entry.transcribe || entry.id === selected?.cred.provider) continue;
+    const loaded = await loadVoiceCredential(deps, actor, entry.id);
+    if (loaded) return { provider: entry.id, apiKey: loaded.apiKey };
+  }
+  const model = await findModelCredential(deps.prisma, actor, OPENAI_PROVIDER);
+  if (!model) return null;
+  const secret = await deps.prisma.secret.findFirst({
+    where: { id: model.secretId, userId: actor.userId, spaceId: null },
+  });
+  if (!secret) return null;
+  const parsed = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
+  return parsed.kind === "api_key" ? { provider: OPENAI_PROVIDER, apiKey: parsed.key } : null;
+}
+
+/** Voice status, with transcription available whenever any connection can transcribe. */
+export async function loadVoiceStatus(
+  deps: VoiceDeps,
+  actor: Actor,
+  cred: { provider: string; voiceId: string } | null,
+): Promise<VoiceStatus> {
+  const status = toVoiceStatus(cred);
+  if (status.transcribe) return status;
+  const transcriber = await loadTranscriber(deps, actor).catch(() => null);
+  return { ...status, transcribe: Boolean(transcriber) };
 }
 
 export async function loadDefaultVoiceCredential(deps: VoiceDeps, actor: Actor) {
@@ -370,9 +411,14 @@ export async function transcribeVoice(
   actor: Actor,
   input: { audio: Uint8Array; mimeType: string; language?: string; signal?: AbortSignal },
 ) {
-  const loaded = await loadDefaultVoiceCredential(deps, actor);
-  if (!loaded) throw new NoVoiceConfigured("key");
-  const provider = createVoiceProvider(loaded.cred.provider);
+  const loaded = await loadTranscriber(deps, actor);
+  if (!loaded) {
+    throw new ORPCError("BAD_REQUEST", {
+      message:
+        "No connection can transcribe audio. Add an OpenAI, ElevenLabs, or Fish Audio key in voice settings, or connect an OpenAI model.",
+    });
+  }
+  const provider = createVoiceProvider(loaded.provider);
   if (!provider.transcribe) {
     throw new ORPCError("BAD_REQUEST", {
       message: "This voice provider does not transcribe audio. Use on-device dictation instead.",
