@@ -8,7 +8,15 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import {
+  type Actor,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  type Bot,
+  type ComputerMode,
+  GROUP_MEMBER_MIN,
+  type ThinkingLevel,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   cancelRunsInTransaction,
@@ -31,13 +39,18 @@ import {
   withCleanupDeadline,
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { validateConnectedModelChoice } from "./model-selection.js";
 import { removePiBotSessions } from "./pi-session.js";
 
-export function confirmSpawnedBotName(confirmName: string, botName: string) {
+export function confirmSpawnedBotName(
+  confirmName: string,
+  botName: string,
+  action: "archive" | "update" = "archive",
+) {
   if (confirmName !== botName) {
     return {
       ok: false as const,
-      error: "confirm_name must exactly match the bot's name. Refusing to archive.",
+      error: `confirm_name must exactly match the bot's name. Refusing to ${action}.`,
     };
   }
   return { ok: true as const };
@@ -62,6 +75,7 @@ export async function spawnBot(
     instructions?: string;
     prompt?: string;
     computerMode?: ComputerMode;
+    model?: ChildBotModel;
   },
 ) {
   const name = input.name.trim();
@@ -73,6 +87,7 @@ export async function spawnBot(
     email: "",
     isDeploymentOwner: false,
   };
+  const instructions = (input.instructions ?? "").trim();
   let duplicate = false;
   let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
   try {
@@ -80,11 +95,12 @@ export async function spawnBot(
       name,
       title: (input.title ?? "").trim(),
       description: "",
-      instructions: (input.instructions ?? "").trim(),
+      instructions,
       notifyOnFinish: true,
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,
       computerMode: input.computerMode,
+      ...input.model,
       initialMessage: {
         role: "system",
         blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
@@ -135,7 +151,74 @@ export async function spawnBot(
     name: created.name,
     title: created.title,
     threadId: created.threadId,
+    // Lets the parent check that a long text arrived whole.
+    ...(!duplicate && instructions ? { instructionCharacters: instructions.length } : {}),
   };
+}
+
+export type ChildBotModel = {
+  modelProvider?: string;
+  modelId?: string;
+  thinkingLevel?: ThinkingLevel;
+};
+
+/** Reads model_provider, model_id, and thinking_level; omitted fields keep the inherited choice. */
+export async function parseChildBotModel(
+  prisma: PrismaClient,
+  scope: { userId: string; spaceId: string },
+  args: Record<string, unknown>,
+): Promise<{ model: ChildBotModel } | { error: string }> {
+  const provider = optionalArg(args.model_provider);
+  const modelId = optionalArg(args.model_id);
+  const thinkingLevel = optionalArg(args.thinking_level);
+  if (Boolean(provider) !== Boolean(modelId)) {
+    return { error: "Pass model_provider and model_id together." };
+  }
+  const model: ChildBotModel = {};
+  if (provider && modelId) {
+    const error = await validateConnectedModelChoice(prisma, scope, provider, modelId);
+    if (error) return { error };
+    model.modelProvider = provider;
+    model.modelId = modelId;
+  }
+  if (thinkingLevel) {
+    const level = ThinkingLevelSchema.safeParse(thinkingLevel);
+    if (!level.success) {
+      return { error: `thinking_level must be one of ${ThinkingLevelSchema.options.join(", ")}.` };
+    }
+    model.thinkingLevel = level.data;
+  }
+  return { model };
+}
+
+/**
+ * instructions or instructions_file. A file is read from the parent's computer and stored
+ * exactly, so a long text never has to pass through the model again.
+ */
+export async function childBotInstructions(
+  args: Record<string, unknown>,
+  readText: (path: string) => Promise<{ content: string } | { error: string }>,
+): Promise<{ instructions?: string } | { error: string }> {
+  const inline = optionalArg(args.instructions);
+  const file = optionalArg(args.instructions_file);
+  if (inline && file) return { error: "Pass instructions or instructions_file, not both." };
+  let instructions = inline;
+  if (file) {
+    const read = await readText(file);
+    if ("error" in read) return { error: `instructions_file ${file}: ${read.error}` };
+    instructions = read.content.trim();
+    if (!instructions) return { error: `instructions_file ${file} is empty.` };
+  }
+  if (instructions && instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH) {
+    return {
+      error: `Instructions have ${instructions.length} characters; the limit is ${BOT_INSTRUCTIONS_MAX_LENGTH}.`,
+    };
+  }
+  return instructions ? { instructions } : {};
+}
+
+function optionalArg(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 async function ensureSpawnRun(
@@ -228,16 +311,87 @@ export async function archiveSpawnedBot(
   },
   context: AdapterContext,
 ) {
-  const confirmName = input.confirmName.trim();
-  if (!confirmName) {
-    return { error: "confirm_name is required. Refusing to archive." };
+  const found = await findSpawnedBot(deps.prisma, input, "archive");
+  if (found.error !== undefined) return { error: found.error };
+  const target = found.bot;
+  if (target.id === input.spawnedByBotId) {
+    return { error: "A bot cannot archive itself with archive_bot." };
   }
 
-  const spawned = await deps.prisma.bot.findMany({
+  await archiveBot(deps, target, context);
+  return { ok: true as const, botId: target.id, name: target.name };
+}
+
+/** Change the instructions or model of a bot this bot created. */
+export async function updateSpawnedBot(
+  prisma: PrismaClient,
+  input: {
+    spawnedByBotId: string;
+    userId: string;
+    spaceId: string;
+    confirmName: string;
+    botId?: string;
+    instructions?: string;
+    model: ChildBotModel;
+  },
+) {
+  const data = {
+    ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+    ...input.model,
+  };
+  if (Object.keys(data).length === 0) {
+    return {
+      error:
+        "Pass instructions, instructions_file, model_provider with model_id, or thinking_level.",
+    };
+  }
+  const found = await findSpawnedBot(prisma, input, "update");
+  if (found.error !== undefined) return { error: found.error };
+  const updated = await prisma.bot.update({
+    where: { id: found.bot.id },
+    data,
+    select: {
+      id: true,
+      name: true,
+      instructions: true,
+      modelProvider: true,
+      modelId: true,
+      thinkingLevel: true,
+    },
+  });
+  return {
+    ok: true as const,
+    botId: updated.id,
+    name: updated.name,
+    instructionCharacters: updated.instructions.length,
+    model: updated.modelId ? `${updated.modelProvider}/${updated.modelId}` : "space default",
+    thinkingLevel: updated.thinkingLevel ?? "default",
+  };
+}
+
+async function findSpawnedBot(
+  prisma: PrismaClient,
+  input: {
+    spawnedByBotId: string;
+    userId: string;
+    spaceId: string;
+    confirmName: string;
+    botId?: string;
+  },
+  action: "archive" | "update",
+) {
+  const confirmName = input.confirmName.trim();
+  if (!confirmName) {
+    return { error: `confirm_name is required. Refusing to ${action}.` };
+  }
+
+  const spawned = await prisma.bot.findMany({
     where: {
       parentBotId: input.spawnedByBotId,
       userId: input.userId,
       spaceId: input.spaceId,
+      // Archival retries must still find the bot they archived.
+      ...(action === "update" ? { archivedAt: null } : {}),
     },
   });
   const matches = input.botId
@@ -245,10 +399,12 @@ export async function archiveSpawnedBot(
     : spawned.filter((bot) => bot.name === confirmName);
 
   if (input.botId && matches.length === 0) {
-    return { error: "That bot was not created by this bot. Refusing to archive." };
+    return { error: `That bot was not created by this bot. Refusing to ${action}.` };
   }
   if (!input.botId && matches.length === 0) {
-    return { error: `This bot did not create a bot named "${confirmName}". Refusing to archive.` };
+    return {
+      error: `This bot did not create a bot named "${confirmName}". Refusing to ${action}.`,
+    };
   }
   if (!input.botId && matches.length > 1) {
     return {
@@ -256,15 +412,10 @@ export async function archiveSpawnedBot(
     };
   }
 
-  const target = matches[0]!;
-  const confirmed = confirmSpawnedBotName(confirmName, target.name);
-  if (!confirmed.ok) return confirmed;
-  if (target.id === input.spawnedByBotId) {
-    return { error: "A bot cannot archive itself with archive_bot." };
-  }
-
-  await archiveBot(deps, target, context);
-  return { ok: true as const, botId: target.id, name: target.name };
+  const bot = matches[0]!;
+  const confirmed = confirmSpawnedBotName(confirmName, bot.name, action);
+  if (!confirmed.ok) return { error: confirmed.error };
+  return { bot };
 }
 
 export async function archiveBot(

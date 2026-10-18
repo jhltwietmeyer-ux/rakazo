@@ -51,6 +51,25 @@ describe("buildApprovalAskBlock", () => {
     expect(block.detail).toContain("to: person@example.test");
   });
 
+  it("shows which bot changes and what it changes to", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "update_spawned_bot",
+      {
+        confirm_name: "Architect",
+        instructions_file: "drafts/cto.md",
+        model_provider: "anthropic",
+        model_id: "claude-test",
+      },
+      [],
+    );
+
+    expect(block).toMatchObject({
+      text: "Review before update bot (Architect)",
+      detail: "model_provider: anthropic\nmodel_id: claude-test\ninstructions_file: drafts/cto.md",
+    });
+  });
+
   it("uses a one-time create or cancel choice for a new security boundary", () => {
     const block = buildApprovalAskBlock(
       "effect-1",

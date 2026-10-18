@@ -378,11 +378,14 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { toolCompletionAuditPayload } from "./executor.js";
 import {
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   maxToolCallsPerTurn,
   PiAgentRuntime,
+  parametersFor,
   providerFailureText,
 } from "./pi-runtime.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
@@ -713,6 +716,66 @@ describe("Pi connector tool dispatch", () => {
       ]);
     },
   );
+
+  it("prepares bot creation and update arguments that pass their schemas", async () => {
+    fakeAgentState.mode = "empty";
+    const botTools = builtinAgentTools.filter(
+      (tool) => tool.name === "spawn_bot" || tool.name === "update_spawned_bot",
+    );
+    const runtime = new PiAgentRuntime();
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "create the bot",
+        instructions: "Create bots when asked.",
+        history: [],
+        tools: botTools,
+        model: { provider: "test", id: "dispatch-test-model" },
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime event stream so the tools are exposed.
+    }
+
+    const fromFile = {
+      instructions_file: "drafts/cto.md",
+      model_provider: "anthropic",
+      model_id: "claude-test",
+      thinking_level: "high",
+    };
+    const cases: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+      ["spawn_bot", { name: "Architect" }, { name: "Architect", title: "", prompt: "" }],
+      [
+        "spawn_bot",
+        { name: "Architect", computer_mode: "team", ...fromFile },
+        { name: "Architect", title: "", prompt: "", computer_mode: "team", ...fromFile },
+      ],
+      [
+        "update_spawned_bot",
+        { confirm_name: "Architect", instructions: "New rules." },
+        { confirm_name: "Architect", instructions: "New rules." },
+      ],
+      [
+        "update_spawned_bot",
+        { confirm_name: "Architect", bot_id: "bot-1", ...fromFile },
+        { confirm_name: "Architect", bot_id: "bot-1", ...fromFile },
+      ],
+    ];
+    for (const [name, raw, expected] of cases) {
+      const exposed = fakeAgentState.tools.find((tool) => tool.name === name);
+      const source = botTools.find((tool) => tool.name === name);
+      const prepared = exposed?.prepareArguments?.(raw);
+      expect(prepared, JSON.stringify(raw)).toEqual(expected);
+      expect(() =>
+        validateToolArguments(
+          { name, description: "", parameters: parametersFor(source!) } as never,
+          { type: "toolCall", id: "call-1", name, arguments: prepared } as never,
+        ),
+      ).not.toThrow();
+    }
+  });
 
   it("exposes a provider-safe name while executing the original connector name", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));

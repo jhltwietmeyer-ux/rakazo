@@ -29,7 +29,7 @@ import type {
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import { usableModelId } from "@rakazo/contracts";
+import { ThinkingLevelSchema, usableModelId } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
@@ -1109,9 +1109,17 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         return {
           name: String(raw.name ?? ""),
           title: raw.title ? String(raw.title) : "",
-          instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
-          computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
+          // Absent enums stay absent: an empty string fails their schema.
+          ...(raw.computer_mode ? { computer_mode: String(raw.computer_mode) } : {}),
+          ...childBotArguments(raw),
+        };
+      }
+      if (tool.name === "update_spawned_bot") {
+        return {
+          confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
+          ...(raw.bot_id ? { bot_id: String(raw.bot_id) } : {}),
+          ...childBotArguments(raw),
         };
       }
       if (tool.name === "update_bot") {
@@ -1696,9 +1704,16 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       name: Type.String(),
       title: Type.Optional(Type.String()),
-      instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
       computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),
+      ...childBotParameters(),
+    });
+  }
+  if (tool.name === "update_spawned_bot") {
+    return Type.Object({
+      confirm_name: Type.String(),
+      bot_id: Type.Optional(Type.String()),
+      ...childBotParameters(),
     });
   }
   if (tool.name === "update_bot") {
@@ -1920,6 +1935,30 @@ function fieldOptions(definition: Record<string, unknown>): FieldOptions {
   return typeof definition.description === "string" && definition.description
     ? { description: definition.description }
     : {};
+}
+
+/** What spawn_bot sets and update_spawned_bot changes; see childBotProperties. */
+function childBotParameters() {
+  return {
+    instructions: Type.Optional(Type.String()),
+    instructions_file: Type.Optional(Type.String()),
+    model_provider: Type.Optional(Type.String()),
+    model_id: Type.Optional(Type.String()),
+    thinking_level: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
+  };
+}
+
+function childBotArguments(raw: Record<string, unknown>) {
+  const fields = [
+    "instructions",
+    "instructions_file",
+    "model_provider",
+    "model_id",
+    "thinking_level",
+  ];
+  return Object.fromEntries(
+    fields.filter((field) => raw[field]).map((field) => [field, String(raw[field])]),
+  );
 }
 
 /** Use a plain string enum: some gateways discard the allowed values from anyOf/const unions. */

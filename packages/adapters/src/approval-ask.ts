@@ -50,6 +50,9 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
   }
+  if (toolName === "update_spawned_bot") {
+    return args.confirm_name ? `update bot (${String(args.confirm_name)})` : "update bot";
+  }
   if (toolName === "create_space") {
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
@@ -72,7 +75,11 @@ function formatApprovalDetail(
       "Bots, groups, chats, files, memory, and integrations in this space stay separate from other spaces.",
     );
   }
-  for (const key of ["collection", "title", "to", "subject", "amount", "body"]) {
+  const keys =
+    toolName === "update_spawned_bot"
+      ? ["model_provider", "model_id", "thinking_level", "instructions_file", "instructions"]
+      : ["collection", "title", "to", "subject", "amount", "body"];
+  for (const key of keys) {
     const value = args[key];
     if (value == null || value === "") continue;
     lines.push(`${key}: ${String(value)}`);

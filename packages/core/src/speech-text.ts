@@ -184,6 +184,7 @@ export function narrateTool(toolName: string): string | null {
     [/^spawn_bot$/, "creating a bot"],
     [/^create_space$/, "creating a space"],
     [/^(archive_bot|delete_bot)$/, "archiving a bot"],
+    [/^update_spawned_bot$/, "updating a bot"],
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
     [/^attach_file$/, "attaching a file"],

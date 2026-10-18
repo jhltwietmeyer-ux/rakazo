@@ -4,6 +4,7 @@ import {
   botSecretDestinationSchema,
   SecretAskPurpose,
   SecretHttpRequest,
+  ThinkingLevelSchema,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
 } from "@rakazo/contracts";
@@ -66,11 +67,39 @@ function secretAskToolSurface() {
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
   "spawn_bot",
+  "update_spawned_bot",
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
   "message_bot",
 ]);
+
+/** What spawn_bot sets and update_spawned_bot changes. */
+const childBotProperties = {
+  instructions: {
+    type: "string",
+    description:
+      "Instructions for the bot. Put anything longer than a few paragraphs in a file and pass instructions_file instead.",
+  },
+  instructions_file: {
+    type: "string",
+    description:
+      "Path of a text file on your computer that holds the instructions. It is stored exactly as written. Do not also pass instructions.",
+  },
+  model_provider: {
+    type: "string",
+    description: "Optional connected model provider. Set together with model_id.",
+  },
+  model_id: {
+    type: "string",
+    description: "Optional connected model ID. Set together with model_provider.",
+  },
+  thinking_level: {
+    type: "string",
+    enum: [...ThinkingLevelSchema.options],
+    description: "Optional reasoning effort for that bot's model.",
+  },
+};
 
 const scheduleCreateProperties = {
   name: { type: "string", description: "Short label shown in Routines." },
@@ -1029,13 +1058,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "spawn_bot",
     description:
-      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
+      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately. Without a model it uses yours.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string" },
         title: { type: "string" },
-        instructions: { type: "string" },
+        ...childBotProperties,
         prompt: {
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
@@ -1089,6 +1118,24 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "true notifies the user when this bot finishes a run; false silences that.",
         },
       },
+    },
+  },
+  {
+    name: "update_spawned_bot",
+    description:
+      "Change the instructions or model of a bot this bot created. New instructions replace the old ones. confirm_name must exactly match its name. This cannot change you, bots the user created, or bots another bot created.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        confirm_name: { type: "string", description: "Exact current name of the bot to change." },
+        bot_id: {
+          type: "string",
+          description:
+            "Optional bot id. If omitted, the unique bot this bot created with confirm_name is changed.",
+        },
+        ...childBotProperties,
+      },
+      required: ["confirm_name"],
     },
   },
   {

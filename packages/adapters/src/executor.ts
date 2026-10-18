@@ -191,7 +191,13 @@ import {
   browserSnapshotFromTool,
 } from "./browser-tools.js";
 import { agentConnectionTools, builtinAgentTools, sharedMemorySaveError } from "./builtin-tools.js";
-import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import {
+  archiveSpawnedBot,
+  childBotInstructions,
+  parseChildBotModel,
+  spawnBot,
+  updateSpawnedBot,
+} from "./child-bots.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -4684,6 +4690,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
               output: outcome.error ? redactSecrets(outcome.error, runSecrets) : "",
               ...(outcome.bytes === undefined ? {} : { bytes: outcome.bytes }),
             });
+          /** A UTF-8 file from this bot's workspace, redacted like any tool output. */
+          const readWorkspaceText = async (
+            filePath: string,
+          ): Promise<{ content: string } | { error: string; size?: number }> => {
+            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
+            let bytes: Uint8Array;
+            try {
+              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
+                maxBytes: MAX_MODEL_FILE_BYTES,
+              });
+            } catch (error) {
+              if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
+                return { error: "file is too large for model context" };
+              }
+              throw error;
+            }
+            if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
+              return { error: "file is too large for model context", size: bytes.byteLength };
+            }
+            try {
+              return {
+                content: redactSecrets(
+                  new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+                  runSecrets,
+                ),
+              };
+            } catch {
+              return { error: "file is not UTF-8 text; use open_path to inspect it" };
+            }
+          };
           if (name === "computer_observe") {
             if (heldForTakeover) {
               return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
@@ -4748,42 +4784,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "read_file") {
             const filePath = String(args.path ?? "");
-            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
-            let bytes: Uint8Array;
-            try {
-              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
-                maxBytes: MAX_MODEL_FILE_BYTES,
-              });
-            } catch (error) {
-              if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
-                return {
-                  error: "file is too large for model context",
-                  path: filePath,
-                };
-              }
-              throw error;
-            }
-            if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
-              return {
-                error: "file is too large for model context",
-                path: filePath,
-                size: bytes.byteLength,
-              };
-            }
-            try {
-              return {
-                path: filePath,
-                content: redactSecrets(
-                  new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-                  runSecrets,
-                ),
-              };
-            } catch {
-              return {
-                error: "file is not UTF-8 text; use open_path to inspect it",
-                path: filePath,
-              };
-            }
+            return { path: filePath, ...(await readWorkspaceText(filePath)) };
           }
           if (name === "write_file") {
             const filePath = String(args.path ?? "notes/result.txt");
@@ -6034,6 +6035,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               computerMode = value;
             }
+            const scope = { userId: run.userId, spaceId: run.spaceId };
+            const model = await parseChildBotModel(deps.prisma, scope, args);
+            if ("error" in model) return finish(model);
+            const instructions = await childBotInstructions(args, readWorkspaceText);
+            if ("error" in instructions) return finish(instructions);
             const spawned = await spawnBot(deps, {
               spawnedBy: {
                 id: bot.id,
@@ -6045,9 +6051,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               spawnKey: effectKey,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
-              instructions: args.instructions ? String(args.instructions) : undefined,
+              instructions: instructions.instructions,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
+              model: model.model,
             });
             if ("error" in spawned) return finish(spawned);
             if (!(await persistEffectResult(spawned))) return uncertainEffectResult(name);
@@ -6073,6 +6080,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
               getLogger().error("spawned bot notification", error);
             }
             return spawned;
+          }
+          if (name === "update_spawned_bot") {
+            const model = await parseChildBotModel(
+              deps.prisma,
+              { userId: run.userId, spaceId: run.spaceId },
+              args,
+            );
+            if ("error" in model) return finish(model);
+            const instructions = await childBotInstructions(args, readWorkspaceText);
+            if ("error" in instructions) return finish(instructions);
+            return finish(
+              await updateSpawnedBot(deps.prisma, {
+                spawnedByBotId: bot.id,
+                userId: run.userId,
+                spaceId: run.spaceId,
+                confirmName: String(args.confirm_name ?? ""),
+                botId: args.bot_id ? String(args.bot_id) : undefined,
+                instructions: instructions.instructions,
+                model: model.model,
+              }),
+            );
           }
           if (name === "update_bot") {
             const parsed = parseUpdateBotPatch(args, bot.name);

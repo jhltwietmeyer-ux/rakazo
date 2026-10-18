@@ -28,6 +28,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "destination.write",
   "delete_bot",
   "archive_bot",
+  "update_spawned_bot",
   "secret_request",
   "forget_secret",
   "forget_memory",
