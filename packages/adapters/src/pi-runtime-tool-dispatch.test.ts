@@ -720,7 +720,7 @@ describe("Pi connector tool dispatch", () => {
   it("prepares bot creation and update arguments that pass their schemas", async () => {
     fakeAgentState.mode = "empty";
     const botTools = builtinAgentTools.filter(
-      (tool) => tool.name === "spawn_bot" || tool.name === "update_spawned_bot",
+      (tool) => tool.name === "spawn_bot" || tool.name === "update_bot" || tool.name === "read_bot",
     );
     const runtime = new PiAgentRuntime();
     for await (const _event of runtime.run(
@@ -752,21 +752,32 @@ describe("Pi connector tool dispatch", () => {
         { name: "Architect", computer_mode: "team", ...fromFile },
         { name: "Architect", title: "", prompt: "", computer_mode: "team", ...fromFile },
       ],
+      ["update_bot", { bot: "Architect", ...fromFile }, { bot: "Architect", ...fromFile }],
       [
-        "update_spawned_bot",
-        { confirm_name: "Architect", instructions: "New rules." },
-        { confirm_name: "Architect", instructions: "New rules." },
+        "update_bot",
+        {
+          bot: "Architect",
+          description: "New rules.",
+          instructions_edits: [{ old: "Chief", new: "Chief and Courier" }],
+          instructions_append: "Report daily.",
+          disable_tools: "shell, browser_act",
+          add_mcp_servers: ["Laptop"],
+        },
+        {
+          bot: "Architect",
+          instructions: "New rules.",
+          instructions_edits: [{ old: "Chief", new: "Chief and Courier" }],
+          instructions_append: "Report daily.",
+          disable_tools: ["shell", "browser_act"],
+          add_mcp_servers: ["Laptop"],
+        },
       ],
-      [
-        "update_spawned_bot",
-        { confirm_name: "Architect", bot_id: "bot-1", ...fromFile },
-        { confirm_name: "Architect", bot_id: "bot-1", ...fromFile },
-      ],
+      ["read_bot", { bot: "Architect" }, { bot: "Architect" }],
     ];
     for (const [name, raw, expected] of cases) {
       const exposed = fakeAgentState.tools.find((tool) => tool.name === name);
       const source = botTools.find((tool) => tool.name === name);
-      const prepared = exposed?.prepareArguments?.(raw);
+      const prepared = exposed?.prepareArguments?.(raw) ?? raw;
       expect(prepared, JSON.stringify(raw)).toEqual(expected);
       expect(() =>
         validateToolArguments(

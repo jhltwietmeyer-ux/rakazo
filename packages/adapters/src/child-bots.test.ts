@@ -27,17 +27,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   archiveBot,
   archiveSpawnedBot,
-  childBotInstructions,
   confirmSpawnedBotName,
   destroyBot,
-  parseChildBotModel,
   spawnBot,
-  updateSpawnedBot,
 } from "./child-bots.js";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
 import { LocalAgentHomeStore } from "./home.js";
-import type * as modelSelection from "./model-selection.js";
-import { validateConnectedModelChoice } from "./model-selection.js";
 
 const fsHooks = vi.hoisted(() => ({
   afterRealpath: undefined as ((resolved: string) => Promise<void>) | undefined,
@@ -55,11 +50,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     },
   };
 });
-
-vi.mock("./model-selection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof modelSelection>()),
-  validateConnectedModelChoice: vi.fn().mockResolvedValue(undefined),
-}));
 
 const context = {
   operationId: "test",
@@ -189,79 +179,7 @@ describe("spawned bot creation", () => {
     createReposSpy.mockRestore();
   });
 });
-describe("spawned bot instructions and model", () => {
-  const scope = { userId: "user-1", spaceId: "workspace-1" };
-
-  it("stores a long instructions file exactly as written", async () => {
-    const text = `# Role\n${"Paragraph with umlauts äöü and **bold**.\n".repeat(400)}## End marker`;
-    const readText = vi.fn().mockResolvedValue({ content: `\n${text}\n` });
-
-    await expect(
-      childBotInstructions({ instructions_file: "drafts/cto.md" }, readText),
-    ).resolves.toEqual({ instructions: text });
-    expect(readText).toHaveBeenCalledWith("drafts/cto.md");
-  });
-
-  it("refuses unusable instruction input", async () => {
-    const readText = vi.fn().mockResolvedValue({ content: "  \n" });
-    await expect(
-      childBotInstructions({ instructions: "Short", instructions_file: "a.md" }, readText),
-    ).resolves.toEqual({ error: "Pass instructions or instructions_file, not both." });
-    await expect(childBotInstructions({ instructions_file: "a.md" }, readText)).resolves.toEqual({
-      error: "instructions_file a.md is empty.",
-    });
-    readText.mockResolvedValueOnce({
-      error: "file is not UTF-8 text; use open_path to inspect it",
-    });
-    await expect(childBotInstructions({ instructions_file: "a.pdf" }, readText)).resolves.toEqual({
-      error: "instructions_file a.pdf: file is not UTF-8 text; use open_path to inspect it",
-    });
-    await expect(
-      childBotInstructions({ instructions: "x".repeat(20_001) }, readText),
-    ).resolves.toEqual({
-      error: "Instructions have 20001 characters; the limit is 20000.",
-    });
-    await expect(childBotInstructions({}, readText)).resolves.toEqual({});
-  });
-
-  it("validates the model choice", async () => {
-    const prisma = {} as PrismaClient;
-    await expect(
-      parseChildBotModel(prisma, scope, { model_provider: "anthropic" }),
-    ).resolves.toEqual({ error: "Pass model_provider and model_id together." });
-    await expect(
-      parseChildBotModel(prisma, scope, { thinking_level: "extreme" }),
-    ).resolves.toMatchObject({
-      error: expect.stringMatching(/^thinking_level must be one of off/),
-    });
-
-    vi.mocked(validateConnectedModelChoice).mockResolvedValueOnce(
-      "Connect that model provider first",
-    );
-    await expect(
-      parseChildBotModel(prisma, scope, { model_provider: "openai", model_id: "gpt-x" }),
-    ).resolves.toEqual({ error: "Connect that model provider first" });
-
-    await expect(
-      parseChildBotModel(prisma, scope, {
-        model_provider: "anthropic",
-        model_id: "claude-test",
-        thinking_level: "high",
-      }),
-    ).resolves.toEqual({
-      model: { modelProvider: "anthropic", modelId: "claude-test", thinkingLevel: "high" },
-    });
-    expect(validateConnectedModelChoice).toHaveBeenLastCalledWith(
-      prisma,
-      scope,
-      "anthropic",
-      "claude-test",
-    );
-    await expect(parseChildBotModel(prisma, scope, { model_provider: "" })).resolves.toEqual({
-      model: {},
-    });
-  });
-
+describe("spawned bot model", () => {
   it("creates the bot with its model and reports the stored length", async () => {
     const createBot = vi.fn().mockResolvedValue({
       id: "child-3",
@@ -297,87 +215,6 @@ describe("spawned bot instructions and model", () => {
     );
     expect(result).toMatchObject({ ok: true, botId: "child-3", instructionCharacters: 24 });
     createReposSpy.mockRestore();
-  });
-});
-
-describe("spawned bot update", () => {
-  const children = [
-    { id: "child-1", name: "Architect", parentBotId: "parent-1" },
-    { id: "child-2", name: "Scout", parentBotId: "parent-1" },
-  ];
-
-  function prismaWith(rows = children) {
-    const findMany = vi.fn().mockResolvedValue(rows);
-    const update = vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => ({
-      id: where.id,
-      name: rows.find((row) => row.id === where.id)?.name,
-      instructions: "",
-      modelProvider: null,
-      modelId: null,
-      thinkingLevel: null,
-      ...data,
-    }));
-    return { prisma: { bot: { findMany, update } } as unknown as PrismaClient, findMany, update };
-  }
-
-  const base = {
-    spawnedByBotId: "parent-1",
-    userId: "user-1",
-    spaceId: "workspace-1",
-    confirmName: "Architect",
-  };
-
-  it("replaces the instructions and model of a bot this bot created", async () => {
-    const { prisma, findMany, update } = prismaWith();
-
-    const result = await updateSpawnedBot(prisma, {
-      ...base,
-      instructions: "New rules.",
-      model: { modelProvider: "anthropic", modelId: "claude-test" },
-    });
-
-    expect(findMany).toHaveBeenCalledWith({
-      where: {
-        parentBotId: "parent-1",
-        userId: "user-1",
-        spaceId: "workspace-1",
-        archivedAt: null,
-      },
-    });
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "child-1" },
-        data: { instructions: "New rules.", modelProvider: "anthropic", modelId: "claude-test" },
-      }),
-    );
-    expect(result).toEqual({
-      ok: true,
-      botId: "child-1",
-      name: "Architect",
-      instructionCharacters: 10,
-      model: "anthropic/claude-test",
-      thinkingLevel: "default",
-    });
-  });
-
-  it("refuses bots it did not create and empty changes", async () => {
-    const { prisma, update } = prismaWith();
-
-    await expect(
-      updateSpawnedBot(prisma, { ...base, confirmName: "Chief", instructions: "x", model: {} }),
-    ).resolves.toEqual({
-      error: 'This bot did not create a bot named "Chief". Refusing to update.',
-    });
-    await expect(
-      updateSpawnedBot(prisma, { ...base, botId: "child-2", instructions: "x", model: {} }),
-    ).resolves.toEqual({
-      error: "confirm_name must exactly match the bot's name. Refusing to update.",
-    });
-    await expect(updateSpawnedBot(prisma, { ...base, model: {} })).resolves.toEqual({
-      error:
-        "Pass instructions, instructions_file, model_provider with model_id, or thinking_level.",
-    });
-    expect(update).not.toHaveBeenCalled();
   });
 });
 

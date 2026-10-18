@@ -38,7 +38,6 @@ import {
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
-  BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   BotSecretName,
@@ -184,6 +183,15 @@ import {
   sameSecretDestination,
   shellCommandEnvironment,
 } from "./bot-secrets.js";
+import {
+  describeBotSetup,
+  findBotToChange,
+  nextDisabledTools,
+  nextInstructions,
+  nextMcpServers,
+  parseBotModel,
+  saveBotSetup,
+} from "./bot-setup.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import {
   browserActFromTool,
@@ -191,13 +199,7 @@ import {
   browserSnapshotFromTool,
 } from "./browser-tools.js";
 import { agentConnectionTools, builtinAgentTools, sharedMemorySaveError } from "./builtin-tools.js";
-import {
-  archiveSpawnedBot,
-  childBotInstructions,
-  parseChildBotModel,
-  spawnBot,
-  updateSpawnedBot,
-} from "./child-bots.js";
+import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -3996,7 +3998,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
-          const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
+          // The bot wrote this text itself; post it whole so chat and later turns see all of it.
+          const narration = redactSecrets(extracted.text, runSecrets).trim();
           const canPublish = canPublishDurableNarration();
           if (
             narration &&
@@ -6036,9 +6039,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               computerMode = value;
             }
             const scope = { userId: run.userId, spaceId: run.spaceId };
-            const model = await parseChildBotModel(deps.prisma, scope, args);
+            const model = await parseBotModel(deps.prisma, scope, args);
             if ("error" in model) return finish(model);
-            const instructions = await childBotInstructions(args, readWorkspaceText);
+            const instructions = await nextInstructions("", args, readWorkspaceText);
             if ("error" in instructions) return finish(instructions);
             const spawned = await spawnBot(deps, {
               spawnedBy: {
@@ -6081,29 +6084,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             return spawned;
           }
-          if (name === "update_spawned_bot") {
-            const model = await parseChildBotModel(
-              deps.prisma,
-              { userId: run.userId, spaceId: run.spaceId },
-              args,
-            );
-            if ("error" in model) return finish(model);
-            const instructions = await childBotInstructions(args, readWorkspaceText);
-            if ("error" in instructions) return finish(instructions);
-            return finish(
-              await updateSpawnedBot(deps.prisma, {
-                spawnedByBotId: bot.id,
-                userId: run.userId,
-                spaceId: run.spaceId,
-                confirmName: String(args.confirm_name ?? ""),
-                botId: args.bot_id ? String(args.bot_id) : undefined,
-                instructions: instructions.instructions,
-                model: model.model,
-              }),
-            );
-          }
-          if (name === "update_bot") {
-            const parsed = parseUpdateBotPatch(args, bot.name);
+          if (name === "update_bot" || name === "read_bot") {
+            const scope = { userId: run.userId, spaceId: run.spaceId };
+            const access = name === "read_bot" ? "read" : "change";
+            const found = await findBotToChange(deps.prisma, scope, bot, args.bot, access);
+            if ("error" in found) return finish(found);
+            const target = found.bot;
+            if (name === "read_bot") {
+              return finish({
+                ...(await describeBotSetup(deps.prisma, scope, target)),
+                canChange: found.canChange,
+              });
+            }
+            const parsed = parseUpdateBotPatch(args, target.name);
             if ("error" in parsed) return finish(parsed);
             const patch = parsed.patch;
             const wantsImage = args.artifact_id !== undefined || args.use_attached_image === true;
@@ -6140,23 +6133,31 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return finish({ error: avatar.error });
             }
             if ("color" in avatar) patch.color = avatar.color;
-            if (Object.keys(patch).length === 0) {
-              return finish({
-                error:
-                  "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
-              });
+            const [model, instructions, mcp] = await Promise.all([
+              parseBotModel(deps.prisma, scope, args),
+              nextInstructions(target.instructions, args, readWorkspaceText),
+              nextMcpServers(deps.prisma, scope, args),
+            ]);
+            if ("error" in model) return finish(model);
+            if ("error" in instructions) return finish(instructions);
+            if ("error" in mcp) return finish(mcp);
+            const tools = nextDisabledTools(target.disabledBuiltinTools, args);
+            if ("error" in tools) return finish(tools);
+            if (
+              Object.keys(patch).length === 0 &&
+              instructions.instructions === undefined &&
+              Object.keys(model.model).length === 0 &&
+              !tools.disabledBuiltinTools &&
+              mcp.add.length + mcp.remove.length === 0
+            ) {
+              return finish({ error: "Nothing to change. Pass at least one field to update." });
             }
-            const updated = await deps.prisma.bot.update({
-              where: { id: bot.id },
-              data: patch,
-              select: {
-                id: true,
-                name: true,
-                title: true,
-                description: true,
-                color: true,
-                notifyOnFinish: true,
-              },
+            const updated = await saveBotSetup(deps.prisma, scope, target.id, {
+              profile: patch,
+              instructions: instructions.instructions,
+              model: model.model,
+              disabledBuiltinTools: tools.disabledBuiltinTools,
+              mcp,
             });
             try {
               await deps.events.append({
@@ -6175,15 +6176,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             } catch (error) {
               getLogger().error("bot.updated notification", error);
             }
-            return finish({
-              ok: true,
-              botId: updated.id,
-              name: updated.name,
-              title: updated.title,
-              description: updated.description,
-              avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
-              notifyOnFinish: updated.notifyOnFinish,
-            });
+            const saved = await findBotToChange(deps.prisma, scope, bot, updated.id, "read");
+            if ("error" in saved) return finish({ ok: true, botId: updated.id });
+            const { instructions: _text, ...setup } = await describeBotSetup(
+              deps.prisma,
+              scope,
+              saved.bot,
+            );
+            return finish({ ok: true, ...setup });
           }
           if (name === "message_user") {
             const rawMessage = redactSecrets(String(args.message ?? ""), runSecrets);
@@ -6838,7 +6838,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // does not treat pre-takeover text as the delegated final result.
               await publishMidTurnNarration();
               if (assembled.trim()) {
-                const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
+                const narration = redactSecrets(assembled, runSecrets).trim();
                 if (narration && canPublishDurableNarration()) {
                   await publishMessage(
                     deps,
@@ -7362,17 +7362,11 @@ async function computerScreenToolResult(
 export type UpdateBotPatch = {
   name?: string;
   title?: string;
-  description?: string;
   color?: string;
   notifyOnFinish?: boolean;
 };
 
-function hasUpdateBotAvatarArgs(args: Record<string, unknown>): boolean {
-  return (
-    args.color !== undefined || args.artifact_id !== undefined || args.use_attached_image === true
-  );
-}
-
+/** Name, title, and notifications; instructions and setup are parsed in bot-setup. */
 export function parseUpdateBotPatch(
   args: Record<string, unknown>,
   currentName: string,
@@ -7380,19 +7374,12 @@ export function parseUpdateBotPatch(
   const patch: UpdateBotPatch = {};
   if (args.name !== undefined) patch.name = String(args.name);
   if (args.title !== undefined) patch.title = String(args.title);
-  if (args.description !== undefined) patch.description = String(args.description);
   const notifyRaw = args.notifyOnFinish !== undefined ? args.notifyOnFinish : args.notify_on_finish;
   if (notifyRaw !== undefined) {
     if (typeof notifyRaw !== "boolean") {
       return { error: "notifyOnFinish must be true or false." };
     }
     patch.notifyOnFinish = notifyRaw;
-  }
-  if (Object.keys(patch).length === 0 && !hasUpdateBotAvatarArgs(args)) {
-    return {
-      error:
-        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
-    };
   }
   if (patch.name !== undefined) {
     const nextName = patch.name.trim();
@@ -7408,13 +7395,6 @@ export function parseUpdateBotPatch(
       return { error: `title must be at most ${BOT_TITLE_MAX_LENGTH} characters.` };
     }
     patch.title = nextTitle;
-  }
-  if (patch.description !== undefined) {
-    const nextDescription = patch.description.trim();
-    if (nextDescription.length > BOT_DESCRIPTION_MAX_LENGTH) {
-      return { error: `description must be at most ${BOT_DESCRIPTION_MAX_LENGTH} characters.` };
-    }
-    patch.description = nextDescription;
   }
   // Placeholder names stay invisible in the header if only title changes;
   // promote the title into name so chat chrome matches the profile update.
@@ -7773,7 +7753,7 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
 function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
   if (!builtinOffered(disabled, "spawn_bot")) return undefined;
   const demo = builtinOffered(disabled, "run_subagent") ? " Do not run_subagent to demo it." : "";
-  return `spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop.${demo}`;
+  return `spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once.${demo}`;
 }
 
 function offeredBuiltinClause(
@@ -7847,7 +7827,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot changes a bot: name, title, avatar, notifications, instructions, model, built-in tools, and MCP servers. Without bot it changes you. You may change yourself and the bots you created; a bot the user created may change every bot. read_bot shows a bot's current setup. For partial instruction changes use instructions_edits or instructions_append; pass long texts as instructions_file. These changes need no approval: make them when asked and say what changed, and never claim a change without the tool. For an avatar pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

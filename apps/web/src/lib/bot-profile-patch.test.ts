@@ -1,6 +1,6 @@
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { botProfilePatch } from "./bot-profile-patch.js";
+import { botProfilePatch, botProfileText } from "./bot-profile-patch.js";
 
 describe("bot profile patch", () => {
   it("leaves instructions alone when the description field was not touched", () => {
@@ -28,5 +28,16 @@ describe("bot profile patch", () => {
   it("still sends a cleared description", () => {
     const patch = botProfilePatch("Invoices", "");
     expect(patch).toEqual({ description: "", instructions: "" });
+  });
+});
+
+describe("bot profile text", () => {
+  it("shows the full instructions a bot was given", () => {
+    const instructions = "I".repeat(BOT_DESCRIPTION_MAX_LENGTH + 1500);
+    expect(botProfileText({ description: "", instructions })).toBe(instructions);
+  });
+
+  it("falls back to the description when no instructions are stored", () => {
+    expect(botProfileText({ description: "Invoices", instructions: " " })).toBe("Invoices");
   });
 });

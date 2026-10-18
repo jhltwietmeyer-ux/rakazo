@@ -59,7 +59,7 @@ export const BUILTIN_TOOL_NAMES = [
   "create_space",
   "spawn_bot",
   "update_bot",
-  "update_spawned_bot",
+  "read_bot",
   "archive_bot",
   "message_bot",
   "handoff_to_bot",

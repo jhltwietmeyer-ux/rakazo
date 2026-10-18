@@ -12,6 +12,8 @@ const model = {
   contextWindow: 65536,
   maxTokens: 4096,
 } as Model<Api>;
+/** A window too small for the fixture history, so older messages must give way. */
+const smallModel = { ...model, contextWindow: 8192, maxTokens: 1024 } as Model<Api>;
 function fixture(count = 30) {
   const history = Array.from({ length: count }, (_, index) => ({
     id: `message-${index}`,
@@ -74,11 +76,12 @@ describe("runtime context policy", () => {
       const implicit = createRuntimeContextPolicy(request).prepareContext(context, model);
       expect(implicit.messages).toEqual(context.messages);
       expect(JSON.stringify(implicit)).not.toContain("Historical navigation snapshots");
+      // Retrieval keeps every message that fits too; it only drops history for the budget.
       const explicit = createRuntimeContextPolicy({
         ...request,
         contextStrategy: "retrieval",
       }).prepareContext(context, model);
-      expect(explicit.messages.length).toBeLessThan(context.messages.length);
+      expect(explicit.messages).toEqual(context.messages);
     },
   );
   it("bounds standalone originals by the model window while preserving current input", () => {
@@ -93,7 +96,7 @@ describe("runtime context policy", () => {
     expect(prepared.messages.at(-1)).toEqual(context.messages.at(-1));
     expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(8192 - 1024);
   });
-  it("keeps an earlier skill read verbatim while shortening other old tool evidence", () => {
+  it("keeps earlier skill and file reads verbatim while shortening other old tool evidence", () => {
     const { request, context } = fixture(2);
     const call = (id: string, name: string) =>
       ({
@@ -118,9 +121,12 @@ describe("runtime context policy", () => {
       content: `---\nname: daily-brief\n---\n${"1. Step kept for skill_update.\n".repeat(80)}`,
     });
     const shellOutput = "synthetic shell output ".repeat(100);
+    const file = JSON.stringify({ path: "drafts/cto.md", content: "Paragraph.\n".repeat(2_000) });
     context.messages.push(
       call("read", "skill_read"),
       result("read", "skill_read", skill),
+      call("file", "read_file"),
+      result("file", "read_file", file),
       call("shell-1", "shell"),
       result("shell-1", "shell", shellOutput),
       call("shell-2", "shell"),
@@ -139,6 +145,7 @@ describe("runtime context policy", () => {
     };
     expect(skill.length).toBeGreaterThan(2500);
     expect(body("read")).toBe(skill);
+    expect(body("file")).toBe(file);
     expect(body("shell-1")).toContain("[Tool result truncated to fit context");
     expect(body("shell-2")).toBe(shellOutput);
   });
@@ -174,7 +181,8 @@ describe("runtime context policy", () => {
       if (strategy === "snapshots")
         expect(String(prepared.messages[1]?.content)).toContain("Historical navigation snapshots");
       expect(prepared.messages.at(-1)).toBe(context.messages.at(-1));
-      expect(prepared.messages.length).toBeLessThan(context.messages.length);
+      if (strategy === "snapshots")
+        expect(prepared.messages.length).toBeLessThan(context.messages.length);
       expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(
         model.contextWindow - model.maxTokens,
       );
@@ -186,7 +194,7 @@ describe("runtime context policy", () => {
     const prepared = createRuntimeContextPolicy({
       ...request,
       contextStrategy: "retrieval",
-    }).prepareContext(context, model);
+    }).prepareContext(context, smallModel);
     expect(prepared.messages).toContainEqual(context.messages.at(-2));
     expect(prepared.messages).toContainEqual(context.messages.at(-1));
     expect(prepared.messages.length).toBeLessThan(context.messages.length);
@@ -450,7 +458,7 @@ describe("runtime context policy", () => {
     const prepared = createRuntimeContextPolicy({
       ...request,
       contextStrategy: "retrieval",
-    }).prepareContext(context, model);
+    }).prepareContext(context, smallModel);
     expect(prepared.messages).not.toContainEqual(context.messages[0]);
   });
   it("keeps unknown provider retention unknown", () => {

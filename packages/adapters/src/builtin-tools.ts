@@ -67,19 +67,19 @@ function secretAskToolSurface() {
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
   "spawn_bot",
-  "update_spawned_bot",
+  "update_bot",
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
   "message_bot",
 ]);
 
-/** What spawn_bot sets and update_spawned_bot changes. */
+/** What spawn_bot sets and update_bot changes. */
 const childBotProperties = {
   instructions: {
     type: "string",
     description:
-      "Instructions for the bot. Put anything longer than a few paragraphs in a file and pass instructions_file instead.",
+      "The bot's full instructions, replacing the old ones. Put anything longer than a few paragraphs in a file and pass instructions_file instead.",
   },
   instructions_file: {
     type: "string",
@@ -1082,10 +1082,14 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "update_bot",
     description:
-      "Update this bot's own name (header and list label), title, description, avatar (profile picture or color/shape), or notifyOnFinish. Call this when the user asks you to rename yourself, change your title/description, change your profile picture, or turn finish notifications on or off. Do not claim you updated the profile without calling this tool.",
+      "Change a bot: yourself without bot, or another bot by name or id. Name, title, avatar, notifications, instructions, model, built-in tools, and MCP servers. Changes apply from that bot's next turn. Call read_bot first to see its current setup. Do not claim a change without calling this tool.",
     inputSchema: {
       type: "object",
       properties: {
+        bot: {
+          type: "string",
+          description: "Name or id of the bot to change. Omit to change yourself.",
+        },
         name: {
           type: "string",
           description: "Display name shown in the chat header and bot list.",
@@ -1094,9 +1098,40 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Short role or headline shown in bot settings.",
         },
-        description: {
+        ...childBotProperties,
+        instructions_edits: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { old: { type: "string" }, new: { type: "string" } },
+            required: ["old", "new"],
+          },
+          description:
+            "Exact replacements in the current instructions. Each old must appear exactly once; an empty new deletes it.",
+        },
+        instructions_append: {
           type: "string",
-          description: "Longer blurb describing what this bot does.",
+          description: "Paragraph added at the end of the instructions.",
+        },
+        enable_tools: {
+          type: "array",
+          items: { type: "string" },
+          description: "Built-in tools to turn on.",
+        },
+        disable_tools: {
+          type: "array",
+          items: { type: "string" },
+          description: "Built-in tools to turn off.",
+        },
+        add_mcp_servers: {
+          type: "array",
+          items: { type: "string" },
+          description: "MCP servers of this space to give the bot, by name.",
+        },
+        remove_mcp_servers: {
+          type: "array",
+          items: { type: "string" },
+          description: "MCP servers to take away, by name.",
         },
         color: {
           type: "string",
@@ -1121,21 +1156,14 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
-    name: "update_spawned_bot",
+    name: "read_bot",
     description:
-      "Change the instructions or model of a bot this bot created. New instructions replace the old ones. confirm_name must exactly match its name. This cannot change you, bots the user created, or bots another bot created.",
+      "Show a bot's full setup: instructions, model, disabled tools, MCP servers, and who created it. Yours without bot.",
     inputSchema: {
       type: "object",
       properties: {
-        confirm_name: { type: "string", description: "Exact current name of the bot to change." },
-        bot_id: {
-          type: "string",
-          description:
-            "Optional bot id. If omitted, the unique bot this bot created with confirm_name is changed.",
-        },
-        ...childBotProperties,
+        bot: { type: "string", description: "Name or id of the bot. Omit for yourself." },
       },
-      required: ["confirm_name"],
     },
   },
   {

@@ -11,6 +11,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   isBuiltinToolName,
@@ -33,7 +34,7 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
-import { botProfilePatch } from "../../lib/bot-profile-patch";
+import { botProfilePatch, botProfileText } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
@@ -232,12 +233,12 @@ export function BotSettings({
   const ids = useId();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
-  const [description, setDescription] = useState(bot.description);
+  const [description, setDescription] = useState(botProfileText(bot));
   // A roster refresh can skip replacing bots while a reorder is in flight, so
   // this prop keeps the description from when the panel opened. Later saves
   // compare against the description last saved here; otherwise a model or
   // voice change treats that stale text as an edit and overwrites instructions.
-  const savedDescriptionRef = useRef(bot.description ?? "");
+  const savedDescriptionRef = useRef(botProfileText(bot));
   const [color, setColor] = useState(bot.color);
   const [notifyOnFinish, setNotifyOnFinish] = useState(bot.notifyOnFinish ?? true);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
@@ -509,7 +510,7 @@ export function BotSettings({
         <Textarea
           id={`${ids}-description`}
           value={description}
-          maxLength={BOT_DESCRIPTION_MAX_LENGTH}
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
           onBlur={() => void enqueueSave()}
           rows={3}

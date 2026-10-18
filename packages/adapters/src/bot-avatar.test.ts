@@ -86,17 +86,28 @@ describe("bot avatar encoding", () => {
 });
 
 describe("update_bot tool schema", () => {
-  it("exposes avatar and notifyOnFinish fields the executor applies", () => {
+  it("exposes profile, avatar, and setup fields the executor applies", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "update_bot");
     if (!tool) throw new Error("missing update_bot");
     const properties =
       (tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
     expect(Object.keys(properties).sort()).toEqual([
+      "add_mcp_servers",
       "artifact_id",
+      "bot",
       "color",
-      "description",
+      "disable_tools",
+      "enable_tools",
+      "instructions",
+      "instructions_append",
+      "instructions_edits",
+      "instructions_file",
+      "model_id",
+      "model_provider",
       "name",
       "notifyOnFinish",
+      "remove_mcp_servers",
+      "thinking_level",
       "title",
       "use_attached_image",
     ]);

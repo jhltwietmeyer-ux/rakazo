@@ -1115,19 +1115,29 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           ...childBotArguments(raw),
         };
       }
-      if (tool.name === "update_spawned_bot") {
-        return {
-          confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
-          ...(raw.bot_id ? { bot_id: String(raw.bot_id) } : {}),
-          ...childBotArguments(raw),
-        };
-      }
       if (tool.name === "update_bot") {
         const notifyRaw = raw.notifyOnFinish ?? raw.notify_on_finish;
         return {
+          ...(raw.bot ? { bot: String(raw.bot) } : {}),
           ...(raw.name !== undefined ? { name: String(raw.name) } : {}),
           ...(raw.title !== undefined ? { title: String(raw.title) } : {}),
-          ...(raw.description !== undefined ? { description: String(raw.description) } : {}),
+          // The app shows one field for description and instructions.
+          ...(raw.description && !raw.instructions
+            ? { instructions: String(raw.description) }
+            : {}),
+          ...childBotArguments(raw),
+          ...listArguments(raw, [
+            "enable_tools",
+            "disable_tools",
+            "add_mcp_servers",
+            "remove_mcp_servers",
+          ]),
+          ...(Array.isArray(raw.instructions_edits)
+            ? { instructions_edits: raw.instructions_edits }
+            : {}),
+          ...(raw.instructions_append
+            ? { instructions_append: String(raw.instructions_append) }
+            : {}),
           ...(raw.color !== undefined ? { color: String(raw.color) } : {}),
           ...(raw.artifact_id !== undefined ? { artifact_id: String(raw.artifact_id) } : {}),
           ...(raw.use_attached_image !== undefined
@@ -1709,18 +1719,20 @@ function builtinParameters(tool: ConnectorTool) {
       ...childBotParameters(),
     });
   }
-  if (tool.name === "update_spawned_bot") {
-    return Type.Object({
-      confirm_name: Type.String(),
-      bot_id: Type.Optional(Type.String()),
-      ...childBotParameters(),
-    });
-  }
   if (tool.name === "update_bot") {
     return Type.Object({
+      bot: Type.Optional(Type.String()),
       name: Type.Optional(Type.String()),
       title: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
+      ...childBotParameters(),
+      instructions_edits: Type.Optional(
+        Type.Array(Type.Object({ old: Type.String(), new: Type.String() })),
+      ),
+      instructions_append: Type.Optional(Type.String()),
+      enable_tools: Type.Optional(Type.Array(Type.String())),
+      disable_tools: Type.Optional(Type.Array(Type.String())),
+      add_mcp_servers: Type.Optional(Type.Array(Type.String())),
+      remove_mcp_servers: Type.Optional(Type.Array(Type.String())),
       color: Type.Optional(Type.String()),
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
@@ -1937,7 +1949,7 @@ function fieldOptions(definition: Record<string, unknown>): FieldOptions {
     : {};
 }
 
-/** What spawn_bot sets and update_spawned_bot changes; see childBotProperties. */
+/** What spawn_bot sets and update_bot changes; see childBotProperties. */
 function childBotParameters() {
   return {
     instructions: Type.Optional(Type.String()),
@@ -1958,6 +1970,19 @@ function childBotArguments(raw: Record<string, unknown>) {
   ];
   return Object.fromEntries(
     fields.filter((field) => raw[field]).map((field) => [field, String(raw[field])]),
+  );
+}
+
+/** Name lists may arrive as one comma-separated string. */
+function listArguments(raw: Record<string, unknown>, fields: string[]) {
+  return Object.fromEntries(
+    fields
+      .filter((field) => raw[field])
+      .map((field) => {
+        const value = raw[field];
+        const items = Array.isArray(value) ? value : String(value).split(",");
+        return [field, items.map((item) => String(item).trim()).filter(Boolean)];
+      }),
   );
 }
 

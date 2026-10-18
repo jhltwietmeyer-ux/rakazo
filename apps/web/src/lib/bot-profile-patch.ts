@@ -24,3 +24,11 @@ export function botProfilePatch(stored: string, next: string): ProfilePatch {
     instructions: next.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
   };
 }
+
+/**
+ * What the Description field shows: the instructions the bot follows, which bots can also
+ * write for each other, or the description when no instructions are stored.
+ */
+export function botProfileText(bot: { description?: string; instructions?: string }): string {
+  return bot.instructions?.trim() ? bot.instructions : (bot.description ?? "");
+}

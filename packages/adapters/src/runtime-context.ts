@@ -18,8 +18,15 @@ interface ProjectionEntry {
   catalogIds?: string[];
 }
 const projections = new Map<string, ProjectionEntry[]>();
-/** A skill read is the source text the agent rewrites with skill_update; never shorten it. */
-export const VERBATIM_TOOL_RESULTS: ReadonlySet<string> = new Set(["skill_read"]);
+/**
+ * Source texts the agent edits or relies on word for word: a skill it rewrites with
+ * skill_update, a file it read, and a bot setup it changes with update_bot. Never shorten them.
+ */
+export const VERBATIM_TOOL_RESULTS: ReadonlySet<string> = new Set([
+  "skill_read",
+  "read_file",
+  "read_bot",
+]);
 // History reads are exact evidence and keep their own offset-aware shortening elsewhere.
 const UNSHORTENED_TOOL_RESULTS = new Set([
   "read_history",
@@ -157,12 +164,6 @@ export function createRuntimeContextPolicy(
   return {
     prepareContext(ctx: Context, model: Model<Api>): Context {
       const strategy = request.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
-      const standaloneHistoryFallback =
-        request.contextStrategy === undefined &&
-        (!request.executeTool ||
-          !["read_history", "search_history"].every((name) =>
-            request.tools.some((tool) => tool.name === name),
-          ));
       metadataPresent = ctx.messages.some((message) =>
         Boolean((message as Message & OriginalMetadata).rakazoHistory),
       );
@@ -373,7 +374,9 @@ export function createRuntimeContextPolicy(
         strategy,
         protectedIndexes,
         cacheWarmth: predictedCache,
-        recentExchanges: retainShortHistory || standaloneHistoryFallback ? messages.length : 8,
+        // Every loaded message stays verbatim until the context budget runs out; older ones
+        // remain reachable through search_history.
+        recentExchanges: messages.length,
       });
       const shortenedStructuredResults = selected.messages.filter((message) => {
         if (message.role !== "toolResult") return false;

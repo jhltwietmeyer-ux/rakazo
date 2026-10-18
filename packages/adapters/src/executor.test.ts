@@ -28,11 +28,11 @@ import { UnavailableModelForAuthError } from "./model-selection.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 
 describe("bot tool permissions", () => {
-  it("never lets self-edit change disabled tools alongside an allowed field", () => {
+  it("ignores a raw disabled tool list; tools change through enable_tools and disable_tools", () => {
     expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] }, "Bot")).toEqual({
       patch: { name: "Scout" },
     });
-    expect(parseUpdateBotPatch({ disabledBuiltinTools: [] }, "Scout")).toHaveProperty("error");
+    expect(parseUpdateBotPatch({ disabledBuiltinTools: [] }, "Scout")).toEqual({ patch: {} });
   });
 
   it("filters history tools without widening the capability-gated selection", () => {
@@ -954,11 +954,8 @@ describe("parseUpdateBotPatch", () => {
     });
   });
 
-  it("requires at least one supported field", () => {
-    expect(parseUpdateBotPatch({}, "Chief")).toEqual({
-      error:
-        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
-    });
+  it("leaves an empty call for the executor to reject with the setup fields", () => {
+    expect(parseUpdateBotPatch({}, "Chief")).toEqual({ patch: {} });
   });
 
   it("leaves avatar-only args for the executor to resolve", () => {
@@ -1017,8 +1014,8 @@ describe("userTurnInstructions", () => {
   const stableMiddle = [
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
-    "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once. Do not run_subagent to demo it.",
+    "update_bot changes a bot: name, title, avatar, notifications, instructions, model, built-in tools, and MCP servers. Without bot it changes you. You may change yourself and the bots you created; a bot the user created may change every bot. read_bot shows a bot's current setup. For partial instruction changes use instructions_edits or instructions_append; pass long texts as instructions_file. These changes need no approval: make them when asked and say what changed, and never claim a change without the tool. For an avatar pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
