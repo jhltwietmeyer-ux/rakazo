@@ -1946,6 +1946,10 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Dictate"
+msgstr "Diktieren"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -4228,6 +4232,10 @@ msgstr "Schritte"
 #: src/pages/Shell.tsx
 msgid "Stop"
 msgstr "Stoppen"
+
+#: src/pages/Shell.tsx
+msgid "Stop dictation"
+msgstr "Diktat stoppen"
 
 #: src/pages/Shell.tsx
 msgid "Stop speaking"

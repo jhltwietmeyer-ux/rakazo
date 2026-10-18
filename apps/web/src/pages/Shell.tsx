@@ -87,6 +87,7 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  AudioLines,
   Bell,
   Box,
   ChevronDown,
@@ -96,6 +97,7 @@ import {
   FolderOpen,
   Gauge,
   LayoutGrid,
+  LoaderCircle,
   Lock,
   LogOut,
   Maximize2,
@@ -199,6 +201,8 @@ import {
 } from "../lib/computer-screen";
 import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
+import type { DictationSnapshot } from "../lib/dictation";
+import { Dictation, spliceDictation } from "../lib/dictation";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
@@ -3753,6 +3757,7 @@ export function ShellPage() {
                   }
                 : undefined
             }
+            dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
             artifactTarget={transcriptArtifactTarget}
             replyTarget={activeReplyTarget}
             replyQuote={activeReplyQuote}
@@ -5423,6 +5428,7 @@ export const Composer = memo(function Composer({
   onSend,
   onStop,
   onVoice,
+  dictationTranscribe,
   replyTarget,
   replyQuote,
   replyTargetName,
@@ -5451,6 +5457,8 @@ export const Composer = memo(function Composer({
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
   onStop: () => Promise<void>;
   onVoice?: () => void;
+  /** Whether the connected voice provider can transcribe; undefined while unknown. */
+  dictationTranscribe?: boolean;
   artifactTarget: ArtifactTarget;
   replyTarget?: ThreadMessage | null;
   replyQuote?: string | null;
@@ -5521,6 +5529,30 @@ export const Composer = memo(function Composer({
     selectedSkill !== null ||
     selectedMentions.length > 0 ||
     pendingAttachments.length > 0;
+  // Dictation goes where the caret was, so it works inside text already written.
+  const dictationRef = useRef<Dictation | null>(null);
+  const dictationAnchor = useRef<{ text: string; start: number; end: number } | null>(null);
+  const [dictationState, setDictationState] = useState<DictationSnapshot>({
+    status: "idle",
+    transcript: "",
+  });
+  const dictating = dictationState.status !== "idle";
+  useEffect(() => {
+    const session = new Dictation();
+    dictationRef.current = session;
+    const unsubscribe = session.subscribe((snapshot) => {
+      setDictationState(snapshot);
+      const anchor = dictationAnchor.current;
+      if (anchor && snapshot.status !== "idle" && snapshot.transcript) {
+        setDraft(spliceDictation(anchor.text, anchor.start, anchor.end, snapshot.transcript).value);
+      }
+    });
+    return () => {
+      unsubscribe();
+      session.stop("cancel");
+      dictationRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!runError || !runErrorId) return;
@@ -5722,8 +5754,38 @@ export const Composer = memo(function Composer({
     mentionQuery === null &&
     (slashSkillOptions.length > 0 || slashActionOptions.length > 0);
 
+  function toggleDictation() {
+    const session = dictationRef.current;
+    if (!session) return;
+    if (dictationState.status === "listening") {
+      session.submitHold();
+      return;
+    }
+    if (dictating) return;
+    const textarea = textareaRef.current;
+    const start = textarea?.selectionStart ?? draft.length;
+    const end = textarea?.selectionEnd ?? draft.length;
+    const anchor = { text: draft, start, end };
+    dictationAnchor.current = anchor;
+    void session.listen({
+      mode: "dictate",
+      transcribe: dictationTranscribe,
+      onFinal: (text) => {
+        if (dictationAnchor.current !== anchor) return;
+        dictationAnchor.current = null;
+        const { value, caret } = spliceDictation(anchor.text, anchor.start, anchor.end, text);
+        updateDraft(value);
+        window.requestAnimationFrame(() => {
+          const field = textareaRef.current;
+          field?.focus();
+          field?.setSelectionRange(caret, caret);
+        });
+      },
+    });
+  }
+
   async function send() {
-    if (!canSend || sending || disabled) return;
+    if (!canSend || sending || disabled || dictating) return;
     const revision = editRevision.current;
     const clientNonce = retryNonce.current ?? newClientNonce();
     retryNonce.current = null;
@@ -5971,6 +6033,11 @@ export const Composer = memo(function Composer({
           {attachmentNotice}
         </div>
       ) : null}
+      {dictationState.error ? (
+        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
+          {dictationState.error}
+        </div>
+      ) : null}
       {pendingAttachments.length ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {pendingAttachments.map((attachment) => (
@@ -6178,6 +6245,7 @@ export const Composer = memo(function Composer({
             ref={textareaRef}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
+            readOnly={dictating}
             onPaste={handlePaste}
             onKeyDown={(event) => {
               if (
@@ -6250,7 +6318,24 @@ export const Composer = memo(function Composer({
             expanded ? "row-start-2" : ""
           }`}
         >
-          {onVoice && draft.trim().length === 0 ? (
+          <Button
+            variant={dictationState.status === "listening" ? "default" : "outline"}
+            size="icon"
+            aria-label={dictationState.status === "listening" ? t`Stop dictation` : t`Dictate`}
+            aria-pressed={dictationState.status === "listening"}
+            title={dictationState.status === "listening" ? t`Stop dictation` : t`Dictate`}
+            disabled={disabled || dictationState.status === "transcribing"}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={toggleDictation}
+            className="size-8 shrink-0 rounded-full text-foreground/75 aria-pressed:text-primary-foreground"
+          >
+            {dictationState.status === "transcribing" ? (
+              <LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Mic size={16} strokeWidth={1.8} />
+            )}
+          </Button>
+          {onVoice && draft.trim().length === 0 && !dictating ? (
             <Button
               variant="outline"
               size="icon"
@@ -6260,7 +6345,7 @@ export const Composer = memo(function Composer({
               onClick={onVoice}
               className="size-8 shrink-0 rounded-full text-foreground/75"
             >
-              <Mic size={16} strokeWidth={1.8} />
+              <AudioLines size={16} strokeWidth={1.8} />
             </Button>
           ) : null}
           {running ? (

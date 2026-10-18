@@ -4,7 +4,11 @@ import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
 import type { UiLocale } from "./ui-locale.js";
 import { errorText } from "./user-error.js";
 
-export type DictationMode = "hold" | "endpoint";
+/**
+ * hold ends when the browser closes its session or submitHold is called, endpoint ends after
+ * a quiet gap, dictate keeps listening across pauses until submitHold.
+ */
+export type DictationMode = "hold" | "endpoint" | "dictate";
 
 export type DictationSnapshot = {
   status: "idle" | "listening" | "transcribing";
@@ -138,6 +142,26 @@ function startsWithWholePrefix(text: string, prefix: string): boolean {
   if (point === undefined) return true;
   // Punctuation ends the retained word. Letters, numbers, and "_" continue it.
   return !/[\p{L}\p{N}_]/u.test(String.fromCodePoint(point));
+}
+
+/**
+ * Put dictated text where the caret was, replacing any selection, with a space only where
+ * words would otherwise touch. Returns the new text and the caret after the dictation.
+ */
+export function spliceDictation(
+  text: string,
+  start: number,
+  end: number,
+  dictated: string,
+): { value: string; caret: number } {
+  const spoken = dictated.trim();
+  if (!spoken) return { value: text, caret: end };
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const lead = before && !/\s$/u.test(before) ? " " : "";
+  const trail = after && !/^[\s.,;:!?)\]}]/u.test(after) ? " " : "";
+  const head = `${before}${lead}${spoken}`;
+  return { value: `${head}${trail}${after}`, caret: head.length };
 }
 
 /** Join carried Web Speech with a restarted session at their longest whole-word overlap. */

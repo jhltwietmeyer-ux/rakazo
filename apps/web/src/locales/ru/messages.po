@@ -1946,6 +1946,10 @@ msgstr "Настольное приложение"
 msgid "Desktop update"
 msgstr "Обновление настольного приложения"
 
+#: src/pages/Shell.tsx
+msgid "Dictate"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr "Прямой MCP"
@@ -4228,6 +4232,10 @@ msgstr "Шаги"
 #: src/pages/Shell.tsx
 msgid "Stop"
 msgstr "Остановить"
+
+#: src/pages/Shell.tsx
+msgid "Stop dictation"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Stop speaking"

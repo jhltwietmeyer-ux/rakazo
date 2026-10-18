@@ -1946,6 +1946,10 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Dictate"
+msgstr "बोलकर लिखें"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -4228,6 +4232,10 @@ msgstr "चरण"
 #: src/pages/Shell.tsx
 msgid "Stop"
 msgstr "रोकें"
+
+#: src/pages/Shell.tsx
+msgid "Stop dictation"
+msgstr "श्रुतलेखन रोकें"
 
 #: src/pages/Shell.tsx
 msgid "Stop speaking"

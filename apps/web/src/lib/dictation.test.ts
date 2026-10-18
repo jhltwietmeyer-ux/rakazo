@@ -4,6 +4,7 @@ import {
   Dictation,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
   speechLocaleTag,
+  spliceDictation,
   TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
   transcriptionLanguage,
   webSpeechAvailable,
@@ -824,6 +825,27 @@ describe("Dictation web speech", () => {
   function done(transcript: string): Part {
     return { transcript, isFinal: true };
   }
+
+  it("keeps dictating across the browser's own session ends until stopped", async () => {
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "dictate", onFinal });
+    const rec = instances[0];
+
+    said(rec, done("first thought"));
+    rec?.onend?.();
+    expect(rec?.start).toHaveBeenCalledTimes(2);
+    expect(onFinal).not.toHaveBeenCalled();
+
+    said(rec, "second thought");
+    expect(dictation.state).toEqual({
+      status: "listening",
+      transcript: "first thought second thought",
+    });
+    dictation.submitHold();
+    expect(onFinal).toHaveBeenCalledWith("first thought second thought");
+    expect(dictation.state.status).toBe("idle");
+  });
 
   it("rides out a pause in the middle of a sentence", async () => {
     vi.useFakeTimers();
@@ -1657,5 +1679,40 @@ describe("transcriptionLanguage", () => {
   it("hints the provider with the language the caller picked", () => {
     vi.stubGlobal("navigator", { language: "es-ES" });
     expect(transcriptionLanguage()).toBe("es");
+  });
+});
+
+describe("spliceDictation", () => {
+  it("adds dictation after text already written", () => {
+    expect(spliceDictation("Meet at noon.", 13, 13, "see you")).toEqual({
+      value: "Meet at noon. see you",
+      caret: 21,
+    });
+    expect(spliceDictation("", 0, 0, " hello ")).toEqual({ value: "hello", caret: 5 });
+  });
+
+  it("puts dictation at the caret inside the text", () => {
+    expect(spliceDictation("Meet at noon.", 4, 4, "me")).toEqual({
+      value: "Meet me at noon.",
+      caret: 7,
+    });
+    expect(spliceDictation("Meet noon.", 5, 5, "at")).toEqual({
+      value: "Meet at noon.",
+      caret: 7,
+    });
+  });
+
+  it("replaces a selection and keeps punctuation attached", () => {
+    expect(spliceDictation("Meet at noon.", 8, 12, "three")).toEqual({
+      value: "Meet at three.",
+      caret: 13,
+    });
+  });
+
+  it("leaves the text alone when nothing was heard", () => {
+    expect(spliceDictation("Meet at noon.", 4, 4, "  ")).toEqual({
+      value: "Meet at noon.",
+      caret: 4,
+    });
   });
 });

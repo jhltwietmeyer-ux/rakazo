@@ -14,6 +14,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
+import { readComposerDraft } from "../lib/composer-draft";
 import { Composer } from "./Shell";
 
 let root: Root | null = null;
@@ -486,4 +487,62 @@ it("clears accepted saved text when only an attachment was picked during the sen
   await act(async () => finishSend(true));
   expect(textarea.value).toBe("");
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
+});
+
+describe("Composer dictation", () => {
+  class FakeRecognition {
+    static instances: FakeRecognition[] = [];
+    continuous = false;
+    interimResults = false;
+    lang = "";
+    onresult: ((event: unknown) => void) | null = null;
+    onerror: ((event: { error?: string }) => void) | null = null;
+    onend: (() => void) | null = null;
+    start = vi.fn();
+    stop = vi.fn();
+    abort = vi.fn();
+    constructor() {
+      FakeRecognition.instances.push(this);
+    }
+  }
+
+  function hear(transcript: string) {
+    act(() => {
+      FakeRecognition.instances.at(-1)?.onresult?.({
+        resultIndex: 0,
+        results: [Object.assign([{ transcript }], { isFinal: true })],
+      });
+    });
+  }
+
+  function micButton(label: string) {
+    const button = container?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    if (!button) throw new Error(`${label} button not found`);
+    return button;
+  }
+
+  it("dictates at the caret inside text already written and stays available", async () => {
+    FakeRecognition.instances = [];
+    (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = FakeRecognition;
+    const textarea = renderComposer(vi.fn(), { onVoice: () => {} });
+    type(textarea, "Meet at noon.");
+    textarea.setSelectionRange(4, 4);
+
+    await act(async () => micButton("Dictate").click());
+    hear("me");
+    expect(textarea.value).toBe("Meet me at noon.");
+    expect(textarea.readOnly).toBe(true);
+
+    await act(async () => micButton("Stop dictation").click());
+    expect(textarea.value).toBe("Meet me at noon.");
+    expect(textarea.readOnly).toBe(false);
+    expect(readComposerDraft("bot:bot-1")).toBe("Meet me at noon.");
+
+    textarea.setSelectionRange(16, 16);
+    await act(async () => micButton("Dictate").click());
+    hear("see you there");
+    await act(async () => micButton("Stop dictation").click());
+    expect(textarea.value).toBe("Meet me at noon. see you there");
+    delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+  });
 });

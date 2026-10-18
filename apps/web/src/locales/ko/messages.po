@@ -1946,6 +1946,10 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Dictate"
+msgstr "음성 입력"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -4228,6 +4232,10 @@ msgstr "실행 단계"
 #: src/pages/Shell.tsx
 msgid "Stop"
 msgstr "중지"
+
+#: src/pages/Shell.tsx
+msgid "Stop dictation"
+msgstr "음성 입력 중지"
 
 #: src/pages/Shell.tsx
 msgid "Stop speaking"
