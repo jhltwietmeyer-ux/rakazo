@@ -8,6 +8,7 @@ import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
+import { usePreviewPanel } from "../lib/preview-panel";
 import { errorText } from "../lib/user-error";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
@@ -30,6 +31,25 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const previewPanel = usePreviewPanel();
+  const opensInPanel = previewPanel !== null && props.mimeType === "text/html";
+
+  // Inside the chat, HTML artifacts open in the preview pane next to the chat
+  // (PIV-33); elsewhere they keep the dialog.
+  async function openInPanel() {
+    if (!previewPanel) return;
+    setDownloadError(null);
+    try {
+      const bytes = await fetchArtifactBytes(props.target, props.artifactId);
+      const html = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      previewPanel.open(
+        { kind: "html", key: props.artifactId, title: props.name, html },
+        previewButton.current,
+      );
+    } catch (error) {
+      setDownloadError(errorText(error, t`Could not open ${props.name}.`));
+    }
+  }
 
   async function startDownload() {
     setDownloadError(null);
@@ -66,7 +86,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             ref={previewButton}
             type="button"
             aria-label={t`Preview ${props.name}`}
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => (opensInPanel ? void openInPanel() : setPreviewOpen(true))}
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-muted text-foreground">

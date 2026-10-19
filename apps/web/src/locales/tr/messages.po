@@ -898,6 +898,7 @@ msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
+#: src/components/PreviewCard.tsx
 #: src/components/SoftwareUpdateSection.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
@@ -967,6 +968,10 @@ msgstr ""
 msgid "Close"
 msgstr "Kapat"
 
+#: src/components/PreviewPane.tsx
+msgid "Close (Esc)"
+msgstr ""
+
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Close {title}"
 msgstr ""
@@ -1015,6 +1020,7 @@ msgid "Close panel"
 msgstr "Paneli kapat"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/PreviewPane.tsx
 msgid "Close preview"
 msgstr "Önizlemeyi kapat"
 
@@ -1518,6 +1524,11 @@ msgstr ""
 msgid "Could not load voice settings"
 msgstr "Ses ayarları yüklenemedi"
 
+#. placeholder {0}: props.name
+#: src/components/ArtifactFileCard.tsx
+msgid "Could not open {0}."
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
@@ -1938,6 +1949,10 @@ msgstr "Bu botun ne yaptığını açıkla"
 msgid "Description"
 msgstr "Açıklama"
 
+#: src/components/PreviewPane.tsx
+msgid "Desktop"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr ""
@@ -2165,6 +2180,14 @@ msgstr "Her hafta"
 msgid "Executor token"
 msgstr "Executor belirteci"
 
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen"
+msgstr ""
+
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen (Esc)"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Genişlet"
@@ -2291,6 +2314,10 @@ msgstr ""
 #. placeholder {0}: filters.dateRange.from
 #: src/pages/ActivityList.tsx
 msgid "From {0}"
+msgstr ""
+
+#: src/components/PreviewPane.tsx
+msgid "Full screen"
 msgstr ""
 
 #: src/pages/WindowChrome.tsx
@@ -3053,6 +3080,10 @@ msgstr ""
 msgid "No longer active"
 msgstr "Artık etkin değil"
 
+#: src/components/PreviewCard.tsx
+msgid "No longer reachable – the bot needs to restart the server"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No managed app catalog is configured on this deployment."
 msgstr ""
@@ -3146,6 +3177,10 @@ msgstr ""
 msgid "Not now"
 msgstr "Şimdi değil"
 
+#: src/components/PreviewCard.tsx
+msgid "Not reachable"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
 msgstr "Hâlâ çalışan bir şey yok"
@@ -3202,6 +3237,7 @@ msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
+#: src/components/PreviewCard.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/Shell.tsx
 msgid "Open"
@@ -3235,6 +3271,11 @@ msgstr "Harici bağlantı açılsın mı?"
 #: src/pages/Shell.tsx
 msgid "Open in full window"
 msgstr "Tam pencerede aç"
+
+#: src/components/PreviewCard.tsx
+#: src/components/PreviewPane.tsx
+msgid "Open in new tab"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Open navigation"
@@ -3362,6 +3403,10 @@ msgstr "API anahtarını yapıştır, sonra yeniden test et."
 msgid "Paused"
 msgstr ""
 
+#: src/components/PreviewPane.tsx
+msgid "Phone (390 px)"
+msgstr ""
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
@@ -3398,6 +3443,15 @@ msgstr "{0} önizle"
 
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
+msgstr ""
+
+#. placeholder {0}: source.title
+#: src/components/PreviewPane.tsx
+msgid "Preview: {0}"
+msgstr ""
+
+#: src/components/PreviewCard.tsx
+msgid "Preview: {title}"
 msgstr ""
 
 #: src/pages/Board.tsx
@@ -3440,6 +3494,10 @@ msgstr "Kuyrukta"
 
 #: src/pages/Shell.tsx
 msgid "Quote"
+msgstr ""
+
+#: src/components/PreviewCard.tsx
+msgid "Reachable"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -3564,6 +3622,10 @@ msgstr "Kontrolü bırak"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
+msgstr ""
+
+#: src/components/PreviewPane.tsx
+msgid "Reload"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
@@ -3705,6 +3767,10 @@ msgstr ""
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Paneli yeniden boyutlandır"
+
+#: src/components/PreviewPane.tsx
+msgid "Resize preview"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -4802,6 +4868,10 @@ msgstr "Ne zaman kullanılır"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Botlar nerede çalışsın?"
+
+#: src/components/PreviewPane.tsx
+msgid "Width"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

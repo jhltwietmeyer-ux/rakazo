@@ -245,6 +245,19 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     size: z.number().int().nonnegative(),
   }),
   z.object({
+    /** Live preview of an HTTP server on a bot computer, served through /api/preview (PIV-31). */
+    kind: z.literal("preview"),
+    artifactId: Id,
+    title: z.string(),
+    url: z.string(),
+    port: z.number().int(),
+    path: z.string(),
+    botId: Id,
+    computerId: z.string(),
+    expiresAt: z.string(),
+    description: z.string().nullable(),
+  }),
+  z.object({
     kind: z.literal("handoff"),
     fromBotId: Id,
     toBotId: Id,

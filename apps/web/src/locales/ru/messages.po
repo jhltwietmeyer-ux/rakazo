@@ -898,6 +898,7 @@ msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
+#: src/components/PreviewCard.tsx
 #: src/components/SoftwareUpdateSection.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
@@ -967,6 +968,10 @@ msgstr "Секрет клиента"
 msgid "Close"
 msgstr "Закрыть"
 
+#: src/components/PreviewPane.tsx
+msgid "Close (Esc)"
+msgstr ""
+
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Close {title}"
 msgstr ""
@@ -1015,6 +1020,7 @@ msgid "Close panel"
 msgstr "Закрыть панель"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/PreviewPane.tsx
 msgid "Close preview"
 msgstr "Закрыть предварительный просмотр"
 
@@ -1518,6 +1524,11 @@ msgstr "Не удалось загрузить статус обновления
 msgid "Could not load voice settings"
 msgstr "Не удалось загрузить голосовые настройки."
 
+#. placeholder {0}: props.name
+#: src/components/ArtifactFileCard.tsx
+msgid "Could not open {0}."
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
@@ -1938,6 +1949,10 @@ msgstr "Опишите, что делает этот бот"
 msgid "Description"
 msgstr "Описание"
 
+#: src/components/PreviewPane.tsx
+msgid "Desktop"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "Настольное приложение"
@@ -2165,6 +2180,14 @@ msgstr "Каждую неделю"
 msgid "Executor token"
 msgstr "Токен Executor"
 
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen"
+msgstr ""
+
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen (Esc)"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Развернуть"
@@ -2291,6 +2314,10 @@ msgstr ""
 #. placeholder {0}: filters.dateRange.from
 #: src/pages/ActivityList.tsx
 msgid "From {0}"
+msgstr ""
+
+#: src/components/PreviewPane.tsx
+msgid "Full screen"
 msgstr ""
 
 #: src/pages/WindowChrome.tsx
@@ -3053,6 +3080,10 @@ msgstr "Групповых чатов пока нет."
 msgid "No longer active"
 msgstr "Больше не активен"
 
+#: src/components/PreviewCard.tsx
+msgid "No longer reachable – the bot needs to restart the server"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No managed app catalog is configured on this deployment."
 msgstr "В этом развертывании не настроен каталог управляемых приложений."
@@ -3146,6 +3177,10 @@ msgstr "Нет в каталоге плагинов"
 msgid "Not now"
 msgstr "Не сейчас"
 
+#: src/components/PreviewCard.tsx
+msgid "Not reachable"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
 msgstr ""
@@ -3202,6 +3237,7 @@ msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "Удалить можно только пустые пространства. Сначала удалите их ботов и группы."
 
 #: src/components/markdown-link-prompt.tsx
+#: src/components/PreviewCard.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/Shell.tsx
 msgid "Open"
@@ -3235,6 +3271,11 @@ msgstr "Открыть внешнюю ссылку?"
 #: src/pages/Shell.tsx
 msgid "Open in full window"
 msgstr "Открыть в полном окне"
+
+#: src/components/PreviewCard.tsx
+#: src/components/PreviewPane.tsx
+msgid "Open in new tab"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Open navigation"
@@ -3362,6 +3403,10 @@ msgstr "Вставьте API-ключ и повторите тест."
 msgid "Paused"
 msgstr "Приостановлено"
 
+#: src/components/PreviewPane.tsx
+msgid "Phone (390 px)"
+msgstr ""
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
@@ -3398,6 +3443,15 @@ msgstr "Предварительный просмотр {0}"
 
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
+msgstr ""
+
+#. placeholder {0}: source.title
+#: src/components/PreviewPane.tsx
+msgid "Preview: {0}"
+msgstr ""
+
+#: src/components/PreviewCard.tsx
+msgid "Preview: {title}"
 msgstr ""
 
 #: src/pages/Board.tsx
@@ -3440,6 +3494,10 @@ msgstr "В очереди"
 
 #: src/pages/Shell.tsx
 msgid "Quote"
+msgstr ""
+
+#: src/components/PreviewCard.tsx
+msgid "Reachable"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -3565,6 +3623,10 @@ msgstr "Передать управление"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
 msgstr "Освободить прерванный компьютер?"
+
+#: src/components/PreviewPane.tsx
+msgid "Reload"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
@@ -3705,6 +3767,10 @@ msgstr "Сброс…"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Изменить размер панели"
+
+#: src/components/PreviewPane.tsx
+msgid "Resize preview"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -4802,6 +4868,10 @@ msgstr "Когда использовать"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Где должны работать боты?"
+
+#: src/components/PreviewPane.tsx
+msgid "Width"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
