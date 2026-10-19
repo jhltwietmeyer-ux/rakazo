@@ -898,6 +898,7 @@ msgstr "Checking computer setup…"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
+#: src/components/PreviewCard.tsx
 #: src/components/SoftwareUpdateSection.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
@@ -967,6 +968,10 @@ msgstr "Client secret"
 msgid "Close"
 msgstr "Close"
 
+#: src/components/PreviewPane.tsx
+msgid "Close (Esc)"
+msgstr "Close (Esc)"
+
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Close {title}"
 msgstr "Close {title}"
@@ -1015,6 +1020,7 @@ msgid "Close panel"
 msgstr "Close panel"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/PreviewPane.tsx
 msgid "Close preview"
 msgstr "Close preview"
 
@@ -1518,6 +1524,11 @@ msgstr "Could not load update status"
 msgid "Could not load voice settings"
 msgstr "Could not load voice settings"
 
+#. placeholder {0}: props.name
+#: src/components/ArtifactFileCard.tsx
+msgid "Could not open {0}."
+msgstr "Could not open {0}."
+
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
@@ -1938,6 +1949,10 @@ msgstr "Describe what this bot does"
 msgid "Description"
 msgstr "Description"
 
+#: src/components/PreviewPane.tsx
+msgid "Desktop"
+msgstr "Desktop"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "Desktop app"
@@ -2165,6 +2180,14 @@ msgstr "Every week"
 msgid "Executor token"
 msgstr "Executor token"
 
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen"
+msgstr "Exit full screen"
+
+#: src/components/PreviewPane.tsx
+msgid "Exit full screen (Esc)"
+msgstr "Exit full screen (Esc)"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Expand"
@@ -2292,6 +2315,10 @@ msgstr "From"
 #: src/pages/ActivityList.tsx
 msgid "From {0}"
 msgstr "From {0}"
+
+#: src/components/PreviewPane.tsx
+msgid "Full screen"
+msgstr "Full screen"
 
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
@@ -3053,6 +3080,10 @@ msgstr "No group chats yet."
 msgid "No longer active"
 msgstr "No longer active"
 
+#: src/components/PreviewCard.tsx
+msgid "No longer reachable – the bot needs to restart the server"
+msgstr "No longer reachable – the bot needs to restart the server"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No managed app catalog is configured on this deployment."
 msgstr "No managed app catalog is configured on this deployment."
@@ -3146,6 +3177,10 @@ msgstr "Not in the plugin catalog"
 msgid "Not now"
 msgstr "Not now"
 
+#: src/components/PreviewCard.tsx
+msgid "Not reachable"
+msgstr "Not reachable"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
 msgstr "Nothing is still running"
@@ -3202,6 +3237,7 @@ msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "Only empty spaces can be deleted. Delete its bots and groups first."
 
 #: src/components/markdown-link-prompt.tsx
+#: src/components/PreviewCard.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/Shell.tsx
 msgid "Open"
@@ -3235,6 +3271,11 @@ msgstr "Open external link?"
 #: src/pages/Shell.tsx
 msgid "Open in full window"
 msgstr "Open in full window"
+
+#: src/components/PreviewCard.tsx
+#: src/components/PreviewPane.tsx
+msgid "Open in new tab"
+msgstr "Open in new tab"
 
 #: src/pages/Shell.tsx
 msgid "Open navigation"
@@ -3362,6 +3403,10 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
+#: src/components/PreviewPane.tsx
+msgid "Phone (390 px)"
+msgstr "Phone (390 px)"
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
@@ -3399,6 +3444,15 @@ msgstr "Preview {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Preview isn't available for this file type — download it to view it."
+
+#. placeholder {0}: source.title
+#: src/components/PreviewPane.tsx
+msgid "Preview: {0}"
+msgstr "Preview: {0}"
+
+#: src/components/PreviewCard.tsx
+msgid "Preview: {title}"
+msgstr "Preview: {title}"
 
 #: src/pages/Board.tsx
 msgid "Priority"
@@ -3441,6 +3495,10 @@ msgstr "Queued"
 #: src/pages/Shell.tsx
 msgid "Quote"
 msgstr "Quote"
+
+#: src/components/PreviewCard.tsx
+msgid "Reachable"
+msgstr "Reachable"
 
 #: src/pages/Shell.tsx
 msgid "React"
@@ -3565,6 +3623,10 @@ msgstr "Release control"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
 msgstr "Release interrupted computer?"
+
+#: src/components/PreviewPane.tsx
+msgid "Reload"
+msgstr "Reload"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
@@ -3705,6 +3767,10 @@ msgstr "Resetting…"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Resize panel"
+
+#: src/components/PreviewPane.tsx
+msgid "Resize preview"
+msgstr "Resize preview"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -4802,6 +4868,10 @@ msgstr "When to use"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
+
+#: src/components/PreviewPane.tsx
+msgid "Width"
+msgstr "Width"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

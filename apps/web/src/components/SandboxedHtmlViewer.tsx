@@ -36,11 +36,16 @@ function shellDocument(innerHtml: string): string {
   return `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${SHELL_CSP}"><meta name="referrer" content="no-referrer"><style>html,body{height:100%;margin:0}iframe{width:100%;height:100%;border:0;background:#fff}</style><iframe id="preview" sandbox="allow-scripts" referrerpolicy="no-referrer" csp="${PREVIEW_CSP}"></iframe><script>document.getElementById("preview").srcdoc=${payload};</script>`;
 }
 
+/** Full sandboxed document, also used to open an HTML artifact in a new tab. */
+export function sandboxedHtmlDocument(html: string): string {
+  return shellDocument(withPreviewDocument(html));
+}
+
 export function SandboxedHtmlViewer({ html, title }: { html: string; title: string }) {
   return (
     <iframe
       title={title}
-      srcDoc={shellDocument(withPreviewDocument(html))}
+      srcDoc={sandboxedHtmlDocument(html)}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       className="h-full w-full border-0 bg-white"

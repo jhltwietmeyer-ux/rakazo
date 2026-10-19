@@ -152,6 +152,8 @@ import { VoiceChatCard } from "../components/call/VoiceChatCard";
 import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
+import { PreviewCard } from "../components/PreviewCard";
+import { PreviewPane, usePreviewNarrow } from "../components/PreviewPane";
 import {
   LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
@@ -215,6 +217,7 @@ import {
   revokePendingAttachmentPreviews,
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
+import { PREVIEW_MIN_CHAT_PX, PreviewPanelProvider, usePreviewPanel } from "../lib/preview-panel";
 import { quoteDraftForSelection } from "../lib/quote-selection";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import type { Panel, RightPanelState } from "../lib/right-panel-state";
@@ -413,8 +416,24 @@ function readCollapsedRosterParents(userId: string | null | undefined): Set<stri
 }
 
 export function ShellPage() {
+  return (
+    <PreviewPanelProvider>
+      <ShellPageContent />
+    </PreviewPanelProvider>
+  );
+}
+
+function ShellPageContent() {
   const { t } = useLingui();
   const { botId, groupId } = useParams();
+  const previewPanel = usePreviewPanel();
+  const previewNarrow = usePreviewNarrow();
+  const previewSplit = Boolean(previewPanel?.source) && !previewNarrow && !previewPanel?.fullscreen;
+  const closePreview = previewPanel?.close;
+  // One preview per window; switching conversation closes it (PIV-33).
+  useEffect(() => {
+    closePreview?.();
+  }, [botId, groupId]);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // Mirrors searchParams for effects that only need to read it once on run,
@@ -3585,6 +3604,11 @@ export function ShellPage() {
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
+        style={
+          previewSplit && previewPanel
+            ? { flex: `${1 - previewPanel.fraction} 1 0px`, minWidth: PREVIEW_MIN_CHAT_PX }
+            : undefined
+        }
       >
         {/* Inside main so the composer and its menus stay above it. */}
         {!mobileSidebarOpen ? (
@@ -3782,6 +3806,7 @@ export function ShellPage() {
           />
         ) : null}
       </main>
+      <PreviewPane />
 
       <CallCard onSettings={() => openSettings("voice")} />
 
@@ -7037,6 +7062,18 @@ const MessageView = memo(function MessageView({
                 target={artifactTarget}
                 artifactId={block.artifactId}
                 name={block.name}
+              />
+            </div>
+          );
+        }
+        if (block.kind === "preview") {
+          return (
+            <div key={i} className="flex justify-start">
+              <PreviewCard
+                artifactId={block.artifactId}
+                title={block.title}
+                url={block.url}
+                description={block.description}
               />
             </div>
           );

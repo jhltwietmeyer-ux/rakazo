@@ -175,6 +175,8 @@ function replyBlockText(block: MessageBlock): string {
     case "image":
     case "file":
       return block.name || blocksToAgentHistoryText([block]);
+    case "preview":
+      return block.title;
   }
 }
 
