@@ -9,7 +9,8 @@ export const PREVIEW_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 export const PREVIEW_UPSTREAM_TIMEOUT_MS = 30_000;
 export const PREVIEW_RATE_LIMIT = { max: 120, windowMs: 60_000 } as const;
 /** Own policy on every proxied response; upstream CSP never reaches the browser. */
-export const PREVIEW_CONTENT_SECURITY_POLICY = "frame-ancestors 'self'";
+export const PREVIEW_CONTENT_SECURITY_POLICY =
+  "sandbox allow-scripts allow-forms; frame-ancestors 'self'";
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "POST"]);
 
@@ -58,18 +59,42 @@ const DROPPED_RESPONSE_HEADERS = new Set([
 
 export type PreviewAccess = "ok" | "forbidden" | "expired" | "unavailable";
 
+export interface PreviewUpstream {
+  /** e.g. http://supervisor:7091/computers/<ref>/http/5173; the request path is appended. */
+  base: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Johann's own navigations (address bar, the app's iframe src) must carry a
+ * session. Everything the opaque-origin sandbox loads (scripts, styles, its own
+ * links and forms) cannot carry the cookie, so the sealed capability alone
+ * authorizes it (decision 19.10.2026 12:16 UTC, point 2). Requests without
+ * fetch metadata count as navigations.
+ */
+export function requiresSession(headers: Headers): boolean {
+  const site = headers.get("sec-fetch-site");
+  const mode = headers.get("sec-fetch-mode");
+  if (site === null || mode === null) return true;
+  return mode === "navigate" && (site === "same-origin" || site === "none");
+}
+
 export interface PreviewProxyDeps {
   secret: string;
   logger: Pick<Logger, "info" | "warn">;
   /** Signed-in user from the request's session cookie, or null. */
   sessionUserId(request: Request): Promise<string | null>;
-  /** Space membership (forbidden) and bot/computer generation (expired) for the sealed scope. */
-  checkAccess(userId: string, scope: PreviewCapabilityScope): Promise<PreviewAccess>;
   /**
-   * Origin that reaches `scope.port` on the bot's computer, resolved from
-   * computerId on the server side. Null when the computer has no reachable host.
+   * Bot/computer generation (expired) for the sealed scope and, when a user is
+   * signed in, their space membership (forbidden).
    */
-  resolveUpstream(scope: PreviewCapabilityScope): Promise<string | null>;
+  checkAccess(userId: string | null, scope: PreviewCapabilityScope): Promise<PreviewAccess>;
+  /**
+   * Base URL that reaches `scope.port` on the bot's computer, resolved from
+   * computerId on the server side, plus headers for that hop. Null when the
+   * computer has no reachable host.
+   */
+  resolveUpstream(scope: PreviewCapabilityScope): Promise<PreviewUpstream | null>;
   fetch?: typeof fetch;
   now?: () => number;
   timeoutMs?: number;
@@ -99,7 +124,7 @@ async function handlePreview(
   if (!parsed) return jsonError(401, "preview_invalid");
 
   const userId = await deps.sessionUserId(c.req.raw).catch(() => null);
-  if (!userId) return jsonError(401, "unauthorized");
+  if (!userId && requiresSession(c.req.raw.headers)) return jsonError(401, "unauthorized");
 
   const capability = openPreviewCapability(parsed.sealed, deps.secret, now);
   if (!capability.ok) {
@@ -113,13 +138,18 @@ async function handlePreview(
   if (access === "expired") return jsonError(410, "preview_expired");
   if (access !== "ok") return jsonError(502, "preview_unreachable");
 
-  if (!limiter.take(userId, now)) return jsonError(429, "rate_limited", { "retry-after": "60" });
+  const rateKey = userId ?? `capability:${scope.botId}:${scope.computerId}:${scope.port}`;
+  if (!limiter.take(rateKey, now)) return jsonError(429, "rate_limited", { "retry-after": "60" });
 
   // The document URL must end in "/" so its relative links stay inside the capability.
   if (parsed.rest === "") {
     return new Response(null, {
       status: 308,
-      headers: { location: `${parsed.prefix}/${raw.search}`, "cache-control": "no-store" },
+      headers: {
+        ...PREVIEW_SECURITY_HEADERS,
+        location: `${parsed.prefix}/${raw.search}`,
+        "cache-control": "no-store",
+      },
     });
   }
   if (!isSafePreviewPath(parsed.rest)) return jsonError(400, "preview_bad_path");
@@ -131,9 +161,9 @@ async function handlePreview(
     body = read.body;
   }
 
-  const upstreamOrigin = await deps.resolveUpstream(scope).catch(() => null);
-  if (!upstreamOrigin) return jsonError(502, "preview_unreachable");
-  const target = upstreamUrl(upstreamOrigin, parsed.rest, raw.search);
+  const upstreamTarget = await deps.resolveUpstream(scope).catch(() => null);
+  if (!upstreamTarget) return jsonError(502, "preview_unreachable");
+  const target = upstreamUrl(upstreamTarget.base, parsed.rest, raw.search);
   if (!target) return jsonError(400, "preview_bad_path");
 
   const log = {
@@ -148,6 +178,7 @@ async function handlePreview(
     const value = c.req.raw.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
+  for (const [name, value] of Object.entries(upstreamTarget.headers ?? {})) headers.set(name, value);
 
   let upstream: Response;
   try {
@@ -167,7 +198,7 @@ async function handlePreview(
   const responseHeaders = filterResponseHeaders(upstream.headers);
   const location = upstream.headers.get("location");
   if (location !== null) {
-    const rewritten = rewriteLocation(location, parsed.prefix, upstreamOrigin, scope.port);
+    const rewritten = rewriteLocation(location, parsed.prefix, scope.port);
     if (rewritten === null) {
       cancelBody(upstream.body);
       deps.logger.warn("preview.redirect.refused", { ...log, "http.status": upstream.status });
@@ -200,11 +231,13 @@ export function prismaPreviewAccess(prisma: PrismaClient): PreviewProxyDeps["che
       },
     });
     if (!bot) return "expired";
-    const member = await prisma.spaceMember.findFirst({
-      where: { userId, spaceId: bot.spaceId },
-      select: { userId: true },
-    });
-    if (!member) return "forbidden";
+    if (userId !== null) {
+      const member = await prisma.spaceMember.findFirst({
+        where: { userId, spaceId: bot.spaceId },
+        select: { userId: true },
+      });
+      if (!member) return "forbidden";
+    }
     if (
       bot.screenGeneration !== scope.botGeneration ||
       bot.computer?.screenGeneration !== scope.computerGeneration
@@ -212,6 +245,38 @@ export function prismaPreviewAccess(prisma: PrismaClient): PreviewProxyDeps["che
       return "expired";
     if (bot.computer.state !== "running" || !bot.computer.providerRef) return "unavailable";
     return "ok";
+  };
+}
+
+/**
+ * Docker computers: the API cannot reach the computer network, so it goes
+ * through the supervisor relay (GET|HEAD|POST /computers/:ref/http/:port/*).
+ * The host comes from the computer row, never from the request.
+ */
+export function supervisorPreviewUpstream(
+  prisma: PrismaClient,
+  supervisorUrl: string,
+  supervisorToken: string,
+): PreviewProxyDeps["resolveUpstream"] {
+  return async (scope) => {
+    const bot = await prisma.bot.findFirst({
+      where: { id: scope.botId, computerId: scope.computerId, archivedAt: null },
+      select: {
+        computer: { select: { kind: true, providerRef: true, homeKey: true, spaceId: true } },
+      },
+    });
+    const computer = bot?.computer;
+    if (!computer?.providerRef || computer.kind !== "docker") return null;
+    const base = supervisorUrl.replace(/\/$/, "");
+    return {
+      base: `${base}/computers/${encodeURIComponent(computer.providerRef)}/http/${scope.port}`,
+      // Same identity the sandbox adapter sends (toComputerRef: botId = homeKey).
+      headers: {
+        authorization: `Bearer ${supervisorToken}`,
+        "x-rakazo-bot-id": computer.homeKey,
+        "x-rakazo-space-id": computer.spaceId,
+      },
+    };
   };
 }
 
@@ -247,12 +312,13 @@ export function isSafePreviewPath(path: string): boolean {
   return decoded.split("/").every((segment) => segment !== "." && segment !== "..");
 }
 
-function upstreamUrl(origin: string, path: string, search: string) {
+function upstreamUrl(baseUrl: string, path: string, search: string) {
   try {
-    const base = new URL(origin);
-    const url = new URL(`${base.origin}${path}${search}`);
+    const base = new URL(baseUrl);
+    const basePath = base.pathname.replace(/\/$/, "");
+    const url = new URL(`${base.origin}${basePath}${path}${search}`);
     // The URL parser must not have moved us: same origin, path taken verbatim.
-    if (url.origin !== base.origin || url.pathname !== path) return null;
+    if (url.origin !== base.origin || url.pathname !== `${basePath}${path}`) return null;
     return url.toString();
   } catch {
     return null;
@@ -278,10 +344,9 @@ export function filterResponseHeaders(upstream: Headers) {
     /attachment/i.test(headers.get("content-disposition") ?? "")
   )
     headers.delete("content-disposition");
-  headers.set("content-security-policy", PREVIEW_CONTENT_SECURITY_POLICY);
-  // The capability lives in the URL; keep it out of Referer headers to other origins.
-  headers.set("referrer-policy", "same-origin");
-  headers.set("x-content-type-options", "nosniff");
+  for (const [name, value] of Object.entries(PREVIEW_SECURITY_HEADERS)) headers.set(name, value);
+  // Module scripts from the opaque sandbox origin are CORS requests; no credentials.
+  headers.set("access-control-allow-origin", "null");
   if (!headers.has("cache-control")) headers.set("cache-control", "no-store");
   return headers;
 }
@@ -294,7 +359,6 @@ export function filterResponseHeaders(upstream: Headers) {
 export function rewriteLocation(
   location: string,
   prefix: string,
-  upstreamOrigin: string,
   port: number,
 ): string | null {
   const value = location.trim();
@@ -309,7 +373,6 @@ export function rewriteLocation(
     return null;
   }
   const own = new Set([
-    new URL(upstreamOrigin).origin,
     `http://localhost:${port}`,
     `http://127.0.0.1:${port}`,
     `http://[::1]:${port}`,
@@ -382,9 +445,22 @@ function hasControlCharacter(value: string) {
   return false;
 }
 
+/** On every preview response, errors and redirects included (AK 10). */
+const PREVIEW_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "content-security-policy": PREVIEW_CONTENT_SECURITY_POLICY,
+  // The capability lives in the URL; keep it out of Referer headers to other origins.
+  "referrer-policy": "same-origin",
+  "x-content-type-options": "nosniff",
+};
+
 function jsonError(status: number, error: string, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify({ error }), {
     status,
-    headers: { "content-type": "application/json", "cache-control": "no-store", ...extra },
+    headers: {
+      ...PREVIEW_SECURITY_HEADERS,
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      ...extra,
+    },
   });
 }

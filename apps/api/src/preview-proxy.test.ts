@@ -17,6 +17,7 @@ import {
   type PreviewProxyDeps,
   prismaPreviewAccess,
   rewriteLocation,
+  supervisorPreviewUpstream,
 } from "./preview-proxy.js";
 
 const secret = "test-screen-proxy-secret-0123456789abcdef";
@@ -118,7 +119,7 @@ function setup(overrides: Partial<PreviewProxyDeps> & { access?: PreviewAccess }
     checkAccess: async () => overrides.access ?? "ok",
     resolveUpstream: async (opened) => {
       resolved.push(opened);
-      return upstreamOrigin;
+      return { base: upstreamOrigin };
     },
     ...overrides,
   });
@@ -187,7 +188,7 @@ describe("preview proxy: access", () => {
   });
 
   it("answers 502 preview_unreachable when the bot's port does not answer", async () => {
-    const { app } = setup({ resolveUpstream: async () => closedOrigin });
+    const { app } = setup({ resolveUpstream: async () => ({ base: closedOrigin }) });
     const response = await call(app, previewUrl(sealed()));
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "preview_unreachable" });
@@ -292,13 +293,16 @@ describe("preview proxy: forwarding", () => {
     expect(headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(headers.get("cache-control")).toBe("max-age=5");
     expect(headers.get("x-custom")).toBe("kept");
-    expect(headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+    expect(headers.get("content-security-policy")).toBe(
+      "sandbox allow-scripts allow-forms; frame-ancestors 'self'",
+    );
+    expect(headers.get("access-control-allow-origin")).toBe("null");
+    expect(headers.get("access-control-allow-credentials")).toBeNull();
     for (const name of [
       "set-cookie",
       "x-frame-options",
       "clear-site-data",
       "content-disposition",
-      "access-control-allow-origin",
       "refresh",
       "connection",
       "x-hop",
@@ -352,11 +356,11 @@ describe("preview proxy: forwarding", () => {
     expect((await call(app, `${prefix}/redirect-evil`)).status).toBe(502);
     expect((await call(app, `${prefix}/redirect-scheme-relative`)).status).toBe(502);
 
-    expect(rewriteLocation("javascript:alert(1)", prefix, upstreamOrigin, 8080)).toBeNull();
+    expect(rewriteLocation("javascript:alert(1)", prefix, 8080)).toBeNull();
     expect(
-      rewriteLocation("http://user:pw@localhost:8080/", prefix, upstreamOrigin, 8080),
+      rewriteLocation("http://user:pw@localhost:8080/", prefix, 8080),
     ).toBeNull();
-    expect(rewriteLocation("http://localhost:9090/", prefix, upstreamOrigin, 8080)).toBeNull();
+    expect(rewriteLocation("http://localhost:9090/", prefix, 8080)).toBeNull();
   });
 });
 
@@ -426,6 +430,102 @@ describe("prismaPreviewAccess", () => {
       resolved.length = 0;
       await call(app, previewUrl(sealed(other)), { method: "HEAD" });
       expect(resolved).toEqual([{ ...scope, ...other }]);
+    }
+  });
+});
+
+describe("preview proxy: sandbox origin (AK 10)", () => {
+  const SUBRESOURCE = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "script" };
+  const SANDBOX_LINK = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" };
+  const OWN_TAB = { "sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
+
+  it("serves a subresource with a valid capability but no session (200)", async () => {
+    const seen: (string | null)[] = [];
+    const { app } = setup({
+      checkAccess: async (userId) => {
+        seen.push(userId);
+        return "ok";
+      },
+    });
+    const response = await call(app, previewUrl(sealed()), { cookie: null, headers: SUBRESOURCE });
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([null]);
+    const frame = await call(app, previewUrl(sealed()), { cookie: null, headers: SANDBOX_LINK });
+    expect(frame.status).toBe(200);
+  });
+
+  it("still requires the session for Johann's own navigation and for requests without fetch metadata", async () => {
+    const { app, resolved } = setup();
+    for (const headers of [OWN_TAB, { ...OWN_TAB, "sec-fetch-site": "same-origin" }, {}]) {
+      const response = await call(app, previewUrl(sealed()), { cookie: null, headers });
+      expect(response.status).toBe(401);
+    }
+    expect(resolved).toHaveLength(0);
+  });
+
+  it("checks membership whenever a session is present, also for subresources", async () => {
+    const { app } = setup({ access: "forbidden" });
+    const response = await call(app, previewUrl(sealed()), { headers: SUBRESOURCE });
+    expect(response.status).toBe(403);
+  });
+
+  it("answers 410 for an expired capability on a subresource", async () => {
+    const { app } = setup();
+    const old = sealed({}, Date.now() - 2 * 60 * 60 * 1000);
+    const response = await call(app, previewUrl(old), { cookie: null, headers: SUBRESOURCE });
+    expect(response.status).toBe(410);
+  });
+
+  it("puts the sandbox CSP on every response, errors and redirects included", async () => {
+    const { app } = setup();
+    const url = previewUrl(sealed());
+    const responses = [
+      await call(app, url),
+      await call(app, url, { cookie: null }),
+      await call(app, url, { method: "PUT" }),
+      await call(app, url.replace(/\/$/, "")),
+      await call(app, `${url}redirect-root`),
+      await call(app, previewUrl(sealed({}, Date.now() - 2 * 60 * 60 * 1000))),
+    ];
+    expect(responses.map((response) => response.status)).toEqual([200, 401, 405, 308, 302, 410]);
+    for (const response of responses)
+      expect(response.headers.get("content-security-policy")).toBe(
+        "sandbox allow-scripts allow-forms; frame-ancestors 'self'",
+      );
+  });
+});
+
+describe("preview proxy: supervisor upstream", () => {
+  function prismaWith(computer: Record<string, unknown> | null) {
+    return {
+      bot: { findFirst: async () => (computer ? { computer } : null) },
+    } as unknown as PrismaClient;
+  }
+
+  it("goes through the supervisor relay with the computer's identity from the database", async () => {
+    const resolve = supervisorPreviewUpstream(
+      prismaWith({ kind: "docker", providerRef: "ctr 1", homeKey: "home_a", spaceId: "space_a" }),
+      "http://supervisor:7091/",
+      "sup-token",
+    );
+    expect(await resolve(scope)).toEqual({
+      base: "http://supervisor:7091/computers/ctr%201/http/8080",
+      headers: {
+        authorization: "Bearer sup-token",
+        "x-rakazo-bot-id": "home_a",
+        "x-rakazo-space-id": "space_a",
+      },
+    });
+  });
+
+  it("has no upstream for missing, stopped or non-docker computers", async () => {
+    for (const computer of [
+      null,
+      { kind: "docker", providerRef: null, homeKey: "h", spaceId: "s" },
+      { kind: "e2b", providerRef: "x", homeKey: "h", spaceId: "s" },
+    ]) {
+      const resolve = supervisorPreviewUpstream(prismaWith(computer), "http://sup", "t");
+      expect(await resolve(scope)).toBeNull();
     }
   });
 });

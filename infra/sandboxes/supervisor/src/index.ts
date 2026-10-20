@@ -90,6 +90,12 @@ import {
   withKeyedLock,
   workspaceTarget,
 } from "./supervisor-logic.js";
+import {
+  PREVIEW_HTTP_MAX_BYTES,
+  PREVIEW_HTTP_ROUTE,
+  PreviewIdentityError,
+  relayPreviewHttp,
+} from "./preview-http.js";
 
 loadRootEnv();
 
@@ -119,6 +125,7 @@ export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
 
 /** Keep normal control requests small while allowing the existing 16 MiB file payload. */
 export function supervisorRequestBodyLimit(method: string, pathname: string): number {
+  if (PREVIEW_HTTP_ROUTE.test(pathname)) return PREVIEW_HTTP_MAX_BYTES;
   return method === "POST" && /^\/computers\/[^/]+\/files\/?$/.test(pathname)
     ? MAX_SUPERVISOR_FILE_REQUEST_BYTES
     : MAX_SUPERVISOR_REQUEST_BYTES;
@@ -337,6 +344,12 @@ app.post("/computers", async (c) => {
     return c.json({ error: message }, 500);
   }
 });
+
+// PIV-32: relay to an HTTP server on the computer, for the API's preview proxy.
+app.all("/computers/:id/http/:port", (c) => relayPreviewHttp(c.req.raw, { lookupHost: previewHost }));
+app.all("/computers/:id/http/:port/*", (c) =>
+  relayPreviewHttp(c.req.raw, { lookupHost: previewHost }),
+);
 
 app.get("/computers/:id", async (c) => {
   const id = c.req.param("id");
@@ -1154,6 +1167,25 @@ async function managedContainer(id: string, botId?: string, spaceId?: string) {
   if (!isRakazoContainer(info, botId, spaceId))
     throw new ComputerIdentityError("computer identity mismatch");
   return { container, info };
+}
+
+/** Container address on its own network; only managed computers of this bot and space. */
+async function previewHost(id: string, botId?: string, spaceId?: string) {
+  let info: Docker.ContainerInspectInfo;
+  try {
+    ({ info } = await managedContainer(id, botId, spaceId));
+  } catch (error) {
+    if (error instanceof ComputerIdentityError) throw new PreviewIdentityError(error.message);
+    throw error;
+  }
+  if (!info.State?.Running) throw new Error("computer is not running");
+  const networks = info.NetworkSettings?.Networks ?? {};
+  const mode = info.HostConfig.NetworkMode;
+  const address =
+    (mode ? networks[mode]?.IPAddress : undefined) ||
+    Object.values(networks).find((network) => network?.IPAddress)?.IPAddress;
+  if (!address) throw new Error("computer has no network address");
+  return address;
 }
 
 async function managedScreen(
