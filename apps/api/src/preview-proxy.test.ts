@@ -466,9 +466,16 @@ describe("preview proxy: sandbox origin (AK 10)", () => {
     expect(frame.status).toBe(200);
   });
 
-  it("still requires the session for Johann's own navigation and for requests without fetch metadata", async () => {
+  it("requires the session for every document and for requests without Sec-Fetch-Dest", async () => {
     const { app, resolved } = setup();
-    for (const headers of [OWN_TAB, { ...OWN_TAB, "sec-fetch-site": "same-origin" }, {}]) {
+    for (const headers of [
+      OWN_TAB,
+      { ...OWN_TAB, "sec-fetch-site": "same-origin" },
+      { ...OWN_TAB, "sec-fetch-site": "cross-site" },
+      { ...OWN_TAB, "sec-fetch-site": "same-site" },
+      { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" },
+      {},
+    ]) {
       const response = await call(app, previewUrl(sealed()), { cookie: null, headers });
       expect(response.status).toBe(401);
     }
@@ -574,7 +581,7 @@ describe("preview artifact read (AK 6)", () => {
     expect(first).toMatchObject({ ...storedPreview });
     expect(first.url).toMatch(/^\/api\/preview\/[^/]+\/app\/$/);
     expect(first.url).not.toBe(second.url);
-    expect(Date.parse(first.expiresAt) - now).toBe(60 * 60 * 1000);
+    expect(Date.parse(first.expiresAt) - now).toBe(10 * 60 * 1000);
     const { app } = setup();
     const response = await call(app, first.url.replace(/app\/$/, ""));
     expect(response.status).toBe(200);

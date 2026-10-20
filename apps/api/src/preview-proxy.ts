@@ -78,17 +78,15 @@ export interface PreviewUpstream {
 }
 
 /**
- * Johann's own navigations (address bar, the app's iframe src) must carry a
- * session. Everything the opaque-origin sandbox loads (scripts, styles, its own
- * links and forms) cannot carry the cookie, so the sealed capability alone
- * authorizes it (decision 19.10.2026 12:16 UTC, point 2). Requests without
- * fetch metadata count as navigations.
+ * Every top-level document (Sec-Fetch-Dest document, from any site, including
+ * links on foreign pages) and every request without Sec-Fetch-Dest must carry
+ * a session. Only what the opaque-origin sandbox loads with another destination
+ * (iframe, script, style, image, fetch ...) cannot carry the cookie, so the
+ * sealed capability alone authorizes it (decision 20.10.2026, review S1).
  */
 export function requiresSession(headers: Headers): boolean {
-  const site = headers.get("sec-fetch-site");
-  const mode = headers.get("sec-fetch-mode");
-  if (site === null || mode === null) return true;
-  return mode === "navigate" && (site === "same-origin" || site === "none");
+  const dest = headers.get("sec-fetch-dest");
+  return dest === null || dest.trim().toLowerCase() === "document";
 }
 
 export interface PreviewProxyDeps {

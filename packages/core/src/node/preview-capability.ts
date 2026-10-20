@@ -1,5 +1,4 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { SCREEN_PROXY_TTL_MS } from "./screen-capability.js";
 
 /**
  * Preview capabilities seal a bot computer's HTTP port for the API preview proxy.
@@ -8,7 +7,8 @@ import { SCREEN_PROXY_TTL_MS } from "./screen-capability.js";
  * a preview seal never opens as a screen. The upstream host is not sealed: the
  * proxy resolves it from computerId at request time.
  */
-export const PREVIEW_PROXY_TTL_MS = SCREEN_PROXY_TTL_MS;
+/** Short on purpose: artifacts.get reseals on every open (review S2). */
+export const PREVIEW_PROXY_TTL_MS = 10 * 60 * 1000;
 export const PREVIEW_ROUTE_PREFIX = "/api/preview/";
 export const PREVIEW_MIN_PORT = 1024;
 export const PREVIEW_MAX_PORT = 65535;

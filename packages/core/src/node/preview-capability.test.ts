@@ -19,10 +19,10 @@ const scope: PreviewCapabilityScope = {
 };
 
 describe("preview capability", () => {
-  it("round-trips the full scope and expires after 60 minutes", () => {
+  it("round-trips the full scope and expires after 10 minutes", () => {
     const { sealed, expiresAt } = sealPreviewCapability(secret, scope, now);
     expect(expiresAt).toBe(now + PREVIEW_PROXY_TTL_MS);
-    expect(PREVIEW_PROXY_TTL_MS).toBe(60 * 60_000);
+    expect(PREVIEW_PROXY_TTL_MS).toBe(10 * 60_000);
     expect(previewUrl(sealed)).toBe(`/api/preview/${sealed}/`);
     expect(openPreviewCapability(sealed, secret, now)).toEqual({ ok: true, scope, expiresAt });
     expect(openPreviewCapability(sealed, secret, expiresAt)).toEqual({
