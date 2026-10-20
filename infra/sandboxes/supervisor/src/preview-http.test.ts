@@ -13,7 +13,7 @@ const identity = { "x-rakazo-bot-id": "bot-1", "x-rakazo-space-id": "space-1" };
 
 function fakeUpstream() {
   const calls: { url: string; init: RequestInit }[] = [];
-  const fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+  const fetch = (async (input: URL | Request | string, init?: RequestInit) => {
     calls.push({ url: String(input), init: init ?? {} });
     return new Response("<h1>ok</h1>", {
       status: 200,
@@ -46,7 +46,18 @@ describe("PIV-32 supervisor preview relay (AK 9)", () => {
   });
 
   it("answers 403 for port 6080, control ports and ports below 1024, before touching Docker", async () => {
-    for (const port of ["6080", "6085", "7070", "5900", "9222", "80", "1023", "0", "65536", "03000"]) {
+    for (const port of [
+      "6080",
+      "6085",
+      "7070",
+      "5900",
+      "9222",
+      "80",
+      "1023",
+      "0",
+      "65536",
+      "03000",
+    ]) {
       const response = await supervisorApp.request(`/computers/c1/http/${port}/`, {
         headers: { authorization: `Bearer ${token}`, ...identity },
       });

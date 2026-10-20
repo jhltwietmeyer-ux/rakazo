@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { PREVIEW_ARTIFACT_MIME_TYPE } from "@rakazo/core";
 import {
   type PreviewCapabilityScope,
   previewUrl,
@@ -18,6 +19,7 @@ import {
   prismaPreviewAccess,
   rewriteLocation,
   supervisorPreviewUpstream,
+  withSealedPreview,
 } from "./preview-proxy.js";
 
 const secret = "test-screen-proxy-secret-0123456789abcdef";
@@ -357,9 +359,7 @@ describe("preview proxy: forwarding", () => {
     expect((await call(app, `${prefix}/redirect-scheme-relative`)).status).toBe(502);
 
     expect(rewriteLocation("javascript:alert(1)", prefix, 8080)).toBeNull();
-    expect(
-      rewriteLocation("http://user:pw@localhost:8080/", prefix, 8080),
-    ).toBeNull();
+    expect(rewriteLocation("http://user:pw@localhost:8080/", prefix, 8080)).toBeNull();
     expect(rewriteLocation("http://localhost:9090/", prefix, 8080)).toBeNull();
   });
 });
@@ -435,9 +435,21 @@ describe("prismaPreviewAccess", () => {
 });
 
 describe("preview proxy: sandbox origin (AK 10)", () => {
-  const SUBRESOURCE = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "script" };
-  const SANDBOX_LINK = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" };
-  const OWN_TAB = { "sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
+  const SUBRESOURCE = {
+    "sec-fetch-site": "cross-site",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "script",
+  };
+  const SANDBOX_LINK = {
+    "sec-fetch-site": "cross-site",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-dest": "iframe",
+  };
+  const OWN_TAB = {
+    "sec-fetch-site": "none",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-dest": "document",
+  };
 
   it("serves a subresource with a valid capability but no session (200)", async () => {
     const seen: (string | null)[] = [];
@@ -527,5 +539,57 @@ describe("preview proxy: supervisor upstream", () => {
       const resolve = supervisorPreviewUpstream(prismaWith(computer), "http://sup", "t");
       expect(await resolve(scope)).toBeNull();
     }
+  });
+});
+
+describe("preview artifact read (AK 6)", () => {
+  const storedPreview = {
+    title: "App",
+    port: 8080,
+    path: "/app/",
+    botId: scope.botId,
+    computerId: scope.computerId,
+    description: null,
+  };
+  const artifact = {
+    id: "art-1",
+    mimeType: PREVIEW_ARTIFACT_MIME_TYPE,
+    contentBase64: Buffer.from(JSON.stringify(storedPreview)).toString("base64"),
+  };
+  function prismaWithBot(bot: Record<string, unknown> | null) {
+    const findFirst = async () => bot;
+    return { bot: { findFirst } } as unknown as PrismaClient;
+  }
+  const decode = (value: { contentBase64: string }) =>
+    JSON.parse(Buffer.from(value.contentBase64, "base64").toString("utf8"));
+
+  it("seals a fresh url on every read and the proxy accepts it", async () => {
+    const prisma = prismaWithBot({
+      screenGeneration: scope.botGeneration,
+      computer: { screenGeneration: scope.computerGeneration },
+    });
+    const now = Date.now();
+    const first = decode(await withSealedPreview(prisma, secret, artifact, now));
+    const second = decode(await withSealedPreview(prisma, secret, artifact, now + 1_000));
+    expect(first).toMatchObject({ ...storedPreview });
+    expect(first.url).toMatch(/^\/api\/preview\/[^/]+\/app\/$/);
+    expect(first.url).not.toBe(second.url);
+    expect(Date.parse(first.expiresAt) - now).toBe(60 * 60 * 1000);
+    const { app } = setup();
+    const response = await call(app, first.url.replace(/app\/$/, ""));
+    expect(response.status).toBe(200);
+  });
+
+  it("returns url null when the bot is gone or on another computer", async () => {
+    const view = decode(await withSealedPreview(prismaWithBot(null), secret, artifact));
+    expect(view).toMatchObject({ ...storedPreview, url: null, expiresAt: null });
+  });
+
+  it("leaves other artifacts untouched and refuses a damaged preview", async () => {
+    const other = { mimeType: "text/html", contentBase64: "PGgxPg==" };
+    expect(await withSealedPreview(prismaWithBot(null), secret, other)).toBe(other);
+    await expect(
+      withSealedPreview(prismaWithBot(null), secret, { ...artifact, contentBase64: "e30=" }),
+    ).rejects.toThrow();
   });
 });

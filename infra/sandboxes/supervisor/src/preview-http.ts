@@ -1,4 +1,4 @@
-import { COMPUTER_CONTROL_PORT } from "./computer-spec.js";
+import { isAllowedPreviewPort } from "@rakazo/core";
 
 /**
  * Preview relay (PIV-32): the API reaches an HTTP server on a bot's computer
@@ -12,20 +12,10 @@ export const PREVIEW_HTTP_MAX_BYTES = 10 * 1024 * 1024;
 export const PREVIEW_HTTP_TIMEOUT_MS = 30_000;
 export const PREVIEW_HTTP_ROUTE = /^\/computers\/[^/]+\/http\/[^/]+(?:\/.*)?$/;
 
-/** Ports the computer itself uses for control, screens, VNC and browser debugging. */
-const RESERVED_PORT_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [COMPUTER_CONTROL_PORT, COMPUTER_CONTROL_PORT],
-  [5900, 5999],
-  [6080, 6095],
-  [9222, 9299],
-];
-
 export function previewPortAllowed(raw: string): number | null {
   if (!/^[1-9][0-9]{3,4}$/.test(raw)) return null;
   const port = Number(raw);
-  if (port < 1024 || port > 65535) return null;
-  if (RESERVED_PORT_RANGES.some(([from, to]) => port >= from && port <= to)) return null;
-  return port;
+  return isAllowedPreviewPort(port) ? port : null;
 }
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "POST"]);

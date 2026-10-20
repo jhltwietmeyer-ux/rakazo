@@ -54,6 +54,12 @@ import {
 } from "./computer-spec.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
+  PREVIEW_HTTP_MAX_BYTES,
+  PREVIEW_HTTP_ROUTE,
+  PreviewIdentityError,
+  relayPreviewHttp,
+} from "./preview-http.js";
+import {
   assertRequestIdentity,
   attemptComputerControl,
   browserProfilePathForScreen,
@@ -90,12 +96,6 @@ import {
   withKeyedLock,
   workspaceTarget,
 } from "./supervisor-logic.js";
-import {
-  PREVIEW_HTTP_MAX_BYTES,
-  PREVIEW_HTTP_ROUTE,
-  PreviewIdentityError,
-  relayPreviewHttp,
-} from "./preview-http.js";
 
 loadRootEnv();
 
@@ -346,7 +346,9 @@ app.post("/computers", async (c) => {
 });
 
 // PIV-32: relay to an HTTP server on the computer, for the API's preview proxy.
-app.all("/computers/:id/http/:port", (c) => relayPreviewHttp(c.req.raw, { lookupHost: previewHost }));
+app.all("/computers/:id/http/:port", (c) =>
+  relayPreviewHttp(c.req.raw, { lookupHost: previewHost }),
+);
 app.all("/computers/:id/http/:port/*", (c) =>
   relayPreviewHttp(c.req.raw, { lookupHost: previewHost }),
 );

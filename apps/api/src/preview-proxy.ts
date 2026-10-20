@@ -1,5 +1,17 @@
+import {
+  isSafePreviewPath,
+  PREVIEW_ARTIFACT_MIME_TYPE,
+  type PreviewArtifactView,
+  parseStoredPreview,
+  previewArtifactUrl,
+} from "@rakazo/core";
 import type { PreviewCapabilityScope } from "@rakazo/core/node/preview-capability";
-import { openPreviewCapability, PREVIEW_ROUTE_PREFIX } from "@rakazo/core/node/preview-capability";
+import {
+  openPreviewCapability,
+  PREVIEW_ROUTE_PREFIX,
+  previewUrl,
+  sealPreviewCapability,
+} from "@rakazo/core/node/preview-capability";
 import type { PrismaClient } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
@@ -154,7 +166,7 @@ async function handlePreview(
   }
   if (!isSafePreviewPath(parsed.rest)) return jsonError(400, "preview_bad_path");
 
-  let body: Uint8Array | undefined;
+  let body: Uint8Array<ArrayBuffer> | undefined;
   if (method === "POST") {
     const read = await readLimitedBody(c.req.raw, PREVIEW_MAX_REQUEST_BYTES);
     if (!read.ok) return jsonError(413, "payload_too_large");
@@ -178,7 +190,8 @@ async function handlePreview(
     const value = c.req.raw.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
-  for (const [name, value] of Object.entries(upstreamTarget.headers ?? {})) headers.set(name, value);
+  for (const [name, value] of Object.entries(upstreamTarget.headers ?? {}))
+    headers.set(name, value);
 
   let upstream: Response;
   try {
@@ -280,6 +293,47 @@ export function supervisorPreviewUpstream(
   };
 }
 
+/**
+ * artifacts.get/getById for a preview artifact (AK 6): the stored JSON carries
+ * no token, so every read mints a fresh capability. The RPC is session-bound
+ * and owner-scoped; this is where session and membership apply again. A bot
+ * that is gone, archived or on another computer yields url null.
+ */
+export async function withSealedPreview<T extends { mimeType: string; contentBase64: string }>(
+  prisma: PrismaClient,
+  secret: string,
+  artifact: T,
+  now = Date.now(),
+): Promise<T> {
+  if (artifact.mimeType !== PREVIEW_ARTIFACT_MIME_TYPE) return artifact;
+  const stored = parseStoredPreview(Buffer.from(artifact.contentBase64, "base64"));
+  if (!stored) throw new Error("Preview artifact is damaged");
+  const bot = await prisma.bot.findFirst({
+    where: { id: stored.botId, computerId: stored.computerId, archivedAt: null },
+    select: { screenGeneration: true, computer: { select: { screenGeneration: true } } },
+  });
+  let view: PreviewArtifactView = { ...stored, url: null, expiresAt: null };
+  if (bot?.computer) {
+    const { sealed, expiresAt } = sealPreviewCapability(
+      secret,
+      {
+        botId: stored.botId,
+        computerId: stored.computerId,
+        botGeneration: bot.screenGeneration,
+        computerGeneration: bot.computer.screenGeneration,
+        port: stored.port,
+      },
+      now,
+    );
+    view = {
+      ...stored,
+      url: previewArtifactUrl(previewUrl(sealed), stored.path),
+      expiresAt: new Date(expiresAt).toISOString(),
+    };
+  }
+  return { ...artifact, contentBase64: Buffer.from(JSON.stringify(view)).toString("base64") };
+}
+
 /** Splits `/api/preview/<sealed>/<rest>` without decoding; rest is "" when the slash is missing. */
 export function splitPreviewPath(pathname: string) {
   if (!pathname.startsWith(PREVIEW_ROUTE_PREFIX)) return null;
@@ -294,23 +348,7 @@ export function splitPreviewPath(pathname: string) {
   };
 }
 
-/**
- * Accepts only a plain absolute path: no empty, "." or ".." segments (also
- * percent-encoded), no encoded slashes or backslashes, no control characters.
- */
-export function isSafePreviewPath(path: string): boolean {
-  if (!path.startsWith("/") || path.includes("//") || path.includes("\\")) return false;
-  if (hasControlCharacter(path)) return false;
-  if (/%(?:2f|5c|00)/i.test(path)) return false;
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(path);
-  } catch {
-    return false;
-  }
-  if (hasControlCharacter(decoded) || decoded.includes("\\")) return false;
-  return decoded.split("/").every((segment) => segment !== "." && segment !== "..");
-}
+export { isSafePreviewPath };
 
 function upstreamUrl(baseUrl: string, path: string, search: string) {
   try {
@@ -356,11 +394,7 @@ export function filterResponseHeaders(upstream: Headers) {
  * path-relative ones pass, absolute ones only when they point at the preview's
  * own server. Anything else (other hosts, "//host", other schemes) is refused.
  */
-export function rewriteLocation(
-  location: string,
-  prefix: string,
-  port: number,
-): string | null {
+export function rewriteLocation(location: string, prefix: string, port: number): string | null {
   const value = location.trim();
   if (hasControlCharacter(value) || value.includes("\\")) return null;
   if (value.startsWith("//")) return null;
@@ -384,7 +418,7 @@ export function rewriteLocation(
 async function readLimitedBody(
   request: Request,
   max: number,
-): Promise<{ ok: true; body: Uint8Array } | { ok: false }> {
+): Promise<{ ok: true; body: Uint8Array<ArrayBuffer> } | { ok: false }> {
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > max) {
     cancelBody(request.body);

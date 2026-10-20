@@ -326,6 +326,27 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "expose_preview",
+    description:
+      "Show an HTTP server running on this bot's computer to the user as a live preview card in the chat (split view in the web app). Start the server first and let it listen on 0.0.0.0, not only localhost (e.g. vite --host). Limits: plain HTTP GET/HEAD/POST only, no WebSockets (no hot reload), 10 MB per request and response, 30 s per request; ports 1024-65535 except the computer's own screen and control ports. The preview lives only while the computer and the server run. It is sandboxed on an opaque origin: no localStorage or sessionStorage, and cookies set by the preview server are dropped. Call again with the same title to update the card (new version). A preview does not replace screenshots: proof for the user still needs attach_file screenshots.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        port: { type: "integer", minimum: 1024, maximum: 65535 },
+        title: {
+          type: "string",
+          description: "Short human-readable title; same title = new version.",
+        },
+        path: {
+          type: "string",
+          description: "Start path inside the server, e.g. /app/. Default /. No query or fragment.",
+        },
+        description: { type: "string" },
+      },
+      required: ["port", "title"],
+    },
+  },
+  {
     name: "shell",
     description:
       "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output.",

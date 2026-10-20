@@ -366,6 +366,7 @@ import {
 import { TASK_CATALOG_GUIDANCE, taskCatalogFromTool } from "./task-catalog.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
+  attachPreviewToThread,
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
@@ -4903,6 +4904,37 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return finish({
                 error: message,
                 hint: 'Call render_plot with {"charts": true} for runnable example specs, or {"help": true} for the full guide.',
+              });
+            }
+          }
+          if (name === "expose_preview") {
+            if (!deps.artifacts) return finish({ error: "artifact storage unavailable" });
+            try {
+              const attached = await attachPreviewToThread(
+                { prisma: deps.prisma, artifacts: deps.artifacts },
+                {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  botId: bot.id,
+                  groupId: thread.groupId ?? undefined,
+                  runId: run.id,
+                  operationId: executionId,
+                  computerId: storedComputer.id,
+                  port: args.port,
+                  title: args.title,
+                  path: args.path,
+                  description: args.description,
+                },
+              );
+              await publishMessage(deps, run, "bot", [attached.block]);
+              return finish({
+                ok: true,
+                artifactId: attached.artifactId,
+                note: "The user sees a preview card; the link is sealed when they open it.",
+              });
+            } catch (error) {
+              return finish({
+                error: error instanceof Error ? error.message : "could not expose preview",
               });
             }
           }
