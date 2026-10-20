@@ -110,6 +110,11 @@ import {
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
+import {
+  mountPreviewProxy,
+  prismaPreviewAccess,
+  supervisorPreviewUpstream,
+} from "./preview-proxy.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
@@ -640,6 +645,18 @@ export async function createApp(
     return actor && { actor, sessionId: session.session.id };
   };
   const sessionActor = async (request: Request) => (await requestSession(request))?.actor ?? null;
+  // PIV-32: bot previews. Docker computers only; other providers answer 502.
+  const previewSupervisorToken = env.sandboxSupervisorToken;
+  mountPreviewProxy(app, {
+    secret: env.screenProxySecret,
+    logger,
+    sessionUserId: async (request) =>
+      (await auth.api.getSession({ headers: sessionHeaders(request) }))?.user.id ?? null,
+    checkAccess: prismaPreviewAccess(prisma),
+    resolveUpstream: previewSupervisorToken
+      ? supervisorPreviewUpstream(prisma, env.sandboxSupervisorUrl, previewSupervisorToken)
+      : async () => null,
+  });
   app.use("/rpc/*", async (c, next) => {
     const session = await requestSession(c.req.raw);
     const actor = session?.actor ?? null;

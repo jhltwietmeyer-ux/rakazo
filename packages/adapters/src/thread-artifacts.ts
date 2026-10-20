@@ -14,8 +14,14 @@ import {
 } from "@rakazo/contracts";
 import {
   attachmentExtensionForMimeType,
+  encodeStoredPreview,
   inferAttachmentMimeType,
+  isAllowedPreviewPort,
   messageBlockForArtifact,
+  normalizePreviewPath,
+  PREVIEW_ARTIFACT_MIME_TYPE,
+  PREVIEW_DESCRIPTION_MAX_LENGTH,
+  PREVIEW_TITLE_MAX_LENGTH,
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -57,7 +63,28 @@ export async function attachWorkspaceFileToThread(
   if (input.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
     throw new Error("file exceeds the 10 MiB attachment limit");
   }
+  return storeThreadArtifact(deps, { ...input, name, mimeType });
+}
 
+type ThreadArtifactInput = {
+  spaceId: string;
+  userId: string;
+  botId: string;
+  groupId?: string;
+  runId: string;
+  operationId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  description?: string;
+};
+
+/** Stores the bytes, versions the row by name (withResolvedArtifactVersion) and returns the message block. */
+async function storeThreadArtifact(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: ThreadArtifactInput,
+): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
+  const { name, mimeType } = input;
   const context = {
     operationId: input.operationId,
     traceId: input.operationId,
@@ -108,6 +135,55 @@ export async function attachWorkspaceFileToThread(
       size: row.size,
     }),
   };
+}
+
+/**
+ * expose_preview (PIV-32): a normal artifact row with the preview media type.
+ * Only this tool creates it; uploads keep their own allow-list. The stored
+ * JSON names bot, computer and port, never a token.
+ */
+export async function attachPreviewToThread(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: Omit<ThreadArtifactInput, "name" | "mimeType" | "bytes" | "description"> & {
+    computerId: string;
+    port: unknown;
+    title: unknown;
+    path?: unknown;
+    description?: unknown;
+  },
+): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
+  if (!isAllowedPreviewPort(input.port)) {
+    throw new Error(
+      "port must be an integer from 1024 to 65535 and not one of the computer's own screen or control ports",
+    );
+  }
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  if (!title) throw new Error("title is required");
+  const path = normalizePreviewPath(input.path);
+  if (path === null)
+    throw new Error("path must be a plain path inside the server, without .. or query");
+  if (input.description !== undefined && typeof input.description !== "string") {
+    throw new Error("description must be a string");
+  }
+  const name = title.slice(0, Math.min(PREVIEW_TITLE_MAX_LENGTH, ARTIFACT_NAME_MAX_LENGTH));
+  const description =
+    (input.description as string | undefined)?.trim().slice(0, PREVIEW_DESCRIPTION_MAX_LENGTH) ||
+    null;
+  const bytes = encodeStoredPreview({
+    title: name,
+    port: input.port,
+    path,
+    botId: input.botId,
+    computerId: input.computerId,
+    description,
+  });
+  return storeThreadArtifact(deps, {
+    ...input,
+    name,
+    mimeType: PREVIEW_ARTIFACT_MIME_TYPE,
+    bytes,
+    description: description ?? undefined,
+  });
 }
 
 export async function materializeCurrentTurnFiles(

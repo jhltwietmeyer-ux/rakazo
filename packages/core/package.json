@@ -43,6 +43,11 @@
       "types": "./src/node/screen-capability.ts",
       "development": "./src/node/screen-capability.ts",
       "default": "./src/node/screen-capability.ts"
+    },
+    "./node/preview-capability": {
+      "types": "./src/node/preview-capability.ts",
+      "development": "./src/node/preview-capability.ts",
+      "default": "./src/node/preview-capability.ts"
     }
   },
   "scripts": {

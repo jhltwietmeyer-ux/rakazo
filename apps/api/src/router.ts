@@ -255,6 +255,7 @@ import {
   promptFocus,
   startOnboarding,
 } from "./onboarding.js";
+import { withSealedPreview } from "./preview-proxy.js";
 import { listRoutineRuns } from "./routine-runs.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -5867,25 +5868,37 @@ export function createRouter(deps: RouterDeps) {
           const group = await groupRepos.getGroupTarget(context.actor, input.groupId);
           const contextBotId = group.members[0]?.bot.id;
           if (!contextBotId) throw new IsolationError();
-          return getSpaceArtifact(deps, context.actor, {
-            artifactId: input.artifactId,
-            groupId: input.groupId,
-            contextBotId,
-          });
+          return withSealedPreview(
+            deps.prisma,
+            deps.env.screenProxySecret,
+            await getSpaceArtifact(deps, context.actor, {
+              artifactId: input.artifactId,
+              groupId: input.groupId,
+              contextBotId,
+            }),
+          );
         }
         await repos.getBot(context.actor, input.botId!);
         try {
-          return await getOwnedArtifact(deps, context.actor, {
-            botId: input.botId!,
-            artifactId: input.artifactId,
-          });
+          return withSealedPreview(
+            deps.prisma,
+            deps.env.screenProxySecret,
+            await getOwnedArtifact(deps, context.actor, {
+              botId: input.botId!,
+              artifactId: input.artifactId,
+            }),
+          );
         } catch (error) {
           if (error instanceof IsolationError) throw error;
           throw error;
         }
       }),
       getById: authed.artifacts.getById.handler(async ({ context, input }) => {
-        return getSpaceArtifactById(deps, context.actor, input);
+        return withSealedPreview(
+          deps.prisma,
+          deps.env.screenProxySecret,
+          await getSpaceArtifactById(deps, context.actor, input),
+        );
       }),
       remove: authed.artifacts.remove.handler(async ({ context, input }) => {
         return deleteArtifactFamily(deps, context.actor, { familyId: input.artifactId });
